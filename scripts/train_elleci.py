@@ -311,10 +311,10 @@ def train():
     # With 24GB VRAM, memory is not a constraint
     if BNB_AVAILABLE:
         print("🚀 Using 8-bit AdamW (bitsandbytes)")
-        optimizer = bnb.optim.AdamW8bit(param_groups, weight_decay=0.01)
+        optimizer = bnb.optim.AdamW8bit(param_groups, weight_decay=0.1)
     else:
         print("⚡ Using AdamW Optimizer")
-        optimizer = torch.optim.AdamW(param_groups, weight_decay=0.01)
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=0.1)
         
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, 
