@@ -74,14 +74,20 @@ def verify_instructions():
 
     # Verify proportions
     print(f"\n📊 Dataset Proportions:")
-    print(f"  Phase 1:")
+    print(f"  Instruction Sources:")
+    print(f"    - Local custom: {total_samples} samples")
+    print(f"    - Fauno StackOverflow: ~47,000 samples (streaming)")
+    print(f"    - Fauno Quora: ~54,000 samples (streaming)")
+    print(f"    - TOTAL: ~109,000 instruction samples")
+    print(f"\n  Phase 1 (90% training):")
     print(f"    - 55% English Cosmopedia (streaming)")
     print(f"    - 35% Italian CulturaX (streaming)")
-    print(f"    - 10% Italian Instructions ({total_samples} samples)")
-    print(f"  Phase 2:")
+    print(f"    - 10% Italian Instructions (~109K total)")
+    print(f"\n  Phase 2 (10% training):")
     print(f"    - 20% English Cosmopedia (streaming)")
     print(f"    - 25% Italian CulturaX (streaming)")
-    print(f"    - 55% Italian Instructions ({total_samples} samples)")
+    print(f"    - 55% Italian Instructions (~109K total)")
+    print(f"    - Expected epochs: ~0.4 (prevents overfitting!)")
 
     return total_samples > 0
 
