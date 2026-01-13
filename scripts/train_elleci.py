@@ -16,7 +16,6 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim.swa_utils import AveragedModel, SWALR
 from transformers import PreTrainedTokenizerFast
-from transformers.optimization import Adafactor  # Memory efficient optimizer
 try:
     import wandb
 except ImportError:
