@@ -17,7 +17,9 @@ The **ChimeraDataset** is a streaming dataset for training bilingual (English-It
 - **Quality**: Highest quality Italian corpus available (deeply cleaned and deduplicated)
 - **Fallback**: Wikipedia IT if CulturaX fails to load
 
-### 3. Italian Instructions
+### 3. Italian Instructions (~109K total)
+
+#### 3a. Local Custom Instructions
 - **Source**: Local JSONL files
 - **Files**:
   - `chimera_instructions_final.jsonl` (7,672 samples)
@@ -25,21 +27,37 @@ The **ChimeraDataset** is a streaming dataset for training bilingual (English-It
 - **Total**: 7,836 instruction-response pairs
 - **Format**: ChatML with `<|im_start|>` tags
 
+#### 3b. Fauno StackOverflow Italian
+- **Source**: `andreabac3/StackOverflow-Italian-Fauno-Baize`
+- **Size**: ~47,000 samples
+- **Content**: Technical Q&A, coding, programming discussions
+- **Quality**: High-quality synthetic data from Fauno project (Sapienza University)
+
+#### 3c. Fauno Quora Italian
+- **Source**: `andreabac3/Quora-Italian-Fauno-Baize`
+- **Size**: ~54,000 samples
+- **Content**: General conversational Q&A across diverse topics
+- **Quality**: High-quality synthetic data from Fauno project
+
+**Total Instructions**: ~109,000 samples (7.8K local + 47K StackOverflow + 54K Quora)
+
 ## Training Phases
 
 ### Phase 1: Knowledge Acquisition (90% of training, ~45K steps)
 - **55%** English Cosmopedia V2 (educational content)
 - **35%** Italian CulturaX (general knowledge)
-- **10%** Italian Instructions (task alignment)
+- **10%** Italian Instructions (~109K samples: custom + Fauno StackOverflow + Fauno Quora)
 
 **Purpose**: Build broad knowledge base in both languages
 
 ### Phase 2: Instruction Alignment (10% of training, ~5K steps)
 - **20%** English Cosmopedia V2 (maintenance)
 - **25%** Italian CulturaX (maintenance)
-- **55%** Italian Instructions (heavy alignment)
+- **55%** Italian Instructions (~109K samples: custom + Fauno StackOverflow + Fauno Quora)
 
 **Purpose**: Align model to instruction-following behavior
+
+**Note**: With ~109K instruction samples and ~44K samples processed in Phase 2, the model sees only ~0.4 epochs of instruction data, preventing overfitting while ensuring good alignment.
 
 ## Features
 
@@ -144,3 +162,7 @@ for batch in dataloader:
 - [CulturaX Paper](https://aclanthology.org/2024.lrec-main.377.pdf)
 - [CulturaX on HuggingFace](https://huggingface.co/datasets/uonlp/CulturaX)
 - [Cosmopedia V2](https://huggingface.co/datasets/HuggingFaceTB/smollm-corpus)
+- [Fauno Italian LLM Project](https://github.com/RSTLess-research/Fauno-Italian-LLM)
+- [Fauno Paper (arXiv)](https://arxiv.org/abs/2306.14457)
+- [Fauno StackOverflow Italian Dataset](https://huggingface.co/datasets/andreabac3/StackOverflow-Italian-Fauno-Baize)
+- [Fauno Quora Italian Dataset](https://huggingface.co/datasets/andreabac3/Quora-Italian-Fauno-Baize)

@@ -5,7 +5,11 @@ Mixes English (Cosmopedia) + Italian (CulturaX + Instructions) with phase-based 
 Data Sources:
 - English: HuggingFaceTB/smollm-corpus (Cosmopedia V2)
 - Italian: uonlp/CulturaX (200GB+ cleaned, 41B words - highest quality Italian corpus)
-- Instructions: Local JSONL files (7,836 Italian instruction-response pairs)
+- Instructions:
+  - Local JSONL files (7,673 Italian instruction-response pairs)
+  - Fauno StackOverflow Italian (~47K technical/coding samples)
+  - Fauno Quora Italian (~54K conversational samples)
+  - Total: ~109K instruction samples
 """
 import torch
 from torch.utils.data import IterableDataset
@@ -23,12 +27,12 @@ class ChimeraDataset(IterableDataset):
     Phase 1 (Knowledge Acquisition - 90% of training):
         - 55% English Cosmopedia V2 (educational content)
         - 35% Italian CulturaX (200GB+ cleaned Italian corpus)
-        - 10% Italian Instructions (7,836 instruction-response pairs)
+        - 10% Italian Instructions (~109K samples: custom + Fauno StackOverflow + Fauno Quora)
 
     Phase 2 (Instruction Alignment - 10% of training):
         - 20% English Cosmopedia V2
         - 25% Italian CulturaX
-        - 55% Italian Instructions
+        - 55% Italian Instructions (~109K samples: custom + Fauno StackOverflow + Fauno Quora)
     """
 
     def __init__(self, tokenizer, phase=1, max_length=512, batch_size=32):
@@ -58,11 +62,14 @@ class ChimeraDataset(IterableDataset):
 
         # Load local instructions (fast, in-memory)
         self.it_instructions = self._load_local_instructions()
-        print(f"🇮🇹 Loaded {len(self.it_instructions)} Italian instructions")
+        print(f"🇮🇹 Loaded {len(self.it_instructions)} local Italian instructions")
+        print(f"📚 Instruction sources: Local (7.7K) + Fauno StackOverflow (47K) + Fauno Quora (54K) = ~109K total")
 
         # Streaming iterators (created lazily in __iter__)
         self._en_iter = None
         self._it_iter = None
+        self._stackoverflow_iter = None
+        self._quora_iter = None
 
     def _load_local_instructions(self):
         """Load Italian instructions from local JSONL files."""
@@ -146,6 +153,36 @@ class ChimeraDataset(IterableDataset):
                     print(f"⚠️ All Italian sources failed: {e3}")
                     raise
 
+    def _get_stackoverflow_stream(self):
+        """Get StackOverflow Italian instruction stream from Fauno dataset."""
+        print("📥 Loading Fauno StackOverflow Italian stream (~47K samples)...")
+        try:
+            ds = load_dataset(
+                "andreabac3/StackOverflow-Italian-Fauno-Baize",
+                split="train",
+                streaming=True
+            )
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+        except Exception as e:
+            print(f"⚠️ StackOverflow Italian dataset failed to load: {e}")
+            print("   Continuing with local instructions only...")
+            return None
+
+    def _get_quora_stream(self):
+        """Get Quora Italian instruction stream from Fauno dataset."""
+        print("📥 Loading Fauno Quora Italian stream (~54K samples)...")
+        try:
+            ds = load_dataset(
+                "andreabac3/Quora-Italian-Fauno-Baize",
+                split="train",
+                streaming=True
+            )
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+        except Exception as e:
+            print(f"⚠️ Quora Italian dataset failed to load: {e}")
+            print("   Continuing with local instructions only...")
+            return None
+
     def _get_next_sample(self, source):
         """
         Get next sample from specified source.
@@ -175,15 +212,50 @@ class ChimeraDataset(IterableDataset):
                 return text
 
             elif source == 'it_instruct':
-                # Italian Instructions (local)
-                item = random.choice(self.it_instructions)
-                inst = item.get("instruction", "")
-                inp = item.get("input", "")
-                out = item.get("output", "")
+                # Italian Instructions - randomly pick from 3 sources
+                source_choice = random.random()
 
-                full_inst = f"{inst}\n{inp}".strip()
-                text = self._format_chatml(full_inst, out)
-                return text
+                if source_choice < 0.33:
+                    # Local custom instructions
+                    item = random.choice(self.it_instructions)
+                    inst = item.get("instruction", "")
+                    inp = item.get("input", "")
+                    out = item.get("output", "")
+                    full_inst = f"{inst}\n{inp}".strip()
+                    text = self._format_chatml(full_inst, out)
+                    return text
+
+                elif source_choice < 0.66:
+                    # StackOverflow Italian (Fauno)
+                    if self._stackoverflow_iter is None:
+                        self._stackoverflow_iter = self._get_stackoverflow_stream()
+
+                    if self._stackoverflow_iter is None:
+                        # Fallback to local if stream failed
+                        return self._get_next_sample('it_instruct')
+
+                    item = next(self._stackoverflow_iter)
+                    # Fauno datasets have 'input' field with full conversation
+                    text = item.get("input", "")
+                    if not text or len(text) < 20:
+                        return None
+                    return text
+
+                else:
+                    # Quora Italian (Fauno)
+                    if self._quora_iter is None:
+                        self._quora_iter = self._get_quora_stream()
+
+                    if self._quora_iter is None:
+                        # Fallback to local if stream failed
+                        return self._get_next_sample('it_instruct')
+
+                    item = next(self._quora_iter)
+                    # Fauno datasets have 'input' field with full conversation
+                    text = item.get("input", "")
+                    if not text or len(text) < 20:
+                        return None
+                    return text
 
         except StopIteration:
             # Stream exhausted, reset it
@@ -191,6 +263,7 @@ class ChimeraDataset(IterableDataset):
                 self._en_iter = self._get_en_stream()
             elif source == 'it_wiki':
                 self._it_iter = self._get_it_stream()
+            # Fauno streams will auto-reset on next call due to None check
             return None
         except Exception as e:
             print(f"⚠️ Error getting sample from {source}: {e}")
