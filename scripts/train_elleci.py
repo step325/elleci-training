@@ -381,7 +381,7 @@ def train():
     print(f"📐 Curriculum: Starting with seq_len={current_seq_len} (will scale to 1024)")
     
     dataset = EllediDataset(tokenizer, phase=1, max_length=current_seq_len, batch_size=config.batch_size)
-    dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=False)
+    dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
     data_iter = iter(dataloader)
     
     model.train()
