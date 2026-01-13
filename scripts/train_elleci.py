@@ -46,7 +46,7 @@ sys.path.append(os.getcwd())
 
 from src.config import NanoPrimeConfig
 from src.model import NanoPrime
-from data.chimera_dataset import ChimeraDataset
+from data.elleci_dataset import EllediDataset
 # from scripts.benchmark_chimera import ChimeraEvaluator  # Module removed
 
 import argparse
@@ -380,7 +380,7 @@ def train():
     current_seq_len = get_current_seq_len(0, TOTAL_STEPS)
     print(f"📐 Curriculum: Starting with seq_len={current_seq_len} (will scale to 1024)")
     
-    dataset = ChimeraDataset(tokenizer, phase=1, max_length=current_seq_len, batch_size=config.batch_size)
+    dataset = EllediDataset(tokenizer, phase=1, max_length=current_seq_len, batch_size=config.batch_size)
     dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=False)
     data_iter = iter(dataloader)
     
@@ -398,7 +398,7 @@ def train():
         if new_seq_len != current_seq_len:
             print(f"\n📐 CURRICULUM: Increasing seq_len {current_seq_len} → {new_seq_len}")
             current_seq_len = new_seq_len
-            dataset = ChimeraDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=config.batch_size)
+            dataset = EllediDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=config.batch_size)
             dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
             data_iter = iter(dataloader)
         
@@ -406,7 +406,7 @@ def train():
         if step == PHASE_SWITCH_STEP:
             print("\n🔄 SWITCHING TO PHASE 2 (Alignment)...")
             current_phase = 2
-            dataset = ChimeraDataset(tokenizer, phase=2, max_length=current_seq_len, batch_size=config.batch_size)
+            dataset = EllediDataset(tokenizer, phase=2, max_length=current_seq_len, batch_size=config.batch_size)
             dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
             data_iter = iter(dataloader)
             # Update scheduler/optimizer? No, continue decay
