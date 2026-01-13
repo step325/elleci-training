@@ -299,7 +299,7 @@ def train():
         print("⏩ torch.compile disabled (use --compile to enable)")
 
     # 3. Optimizer with LeRaC (per-layer learning rates)
-    lr = 3.0e-4  # Standard LR for AdamW
+    lr = 1.0e-4  # Lowered from 3e-4 for stability
     
     param_groups = create_lerac_param_groups(model, base_lr=lr, warmup_ratio=2.0)
     
