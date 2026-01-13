@@ -1,6 +1,11 @@
 """
 Chimera Dataset - Direct Streaming (No Buffer)
-Mixes English (Cosmopedia) + Italian (Wikipedia + Instructions) with phase-based ratios.
+Mixes English (Cosmopedia) + Italian (CulturaX + Instructions) with phase-based ratios.
+
+Data Sources:
+- English: HuggingFaceTB/smollm-corpus (Cosmopedia V2)
+- Italian: uonlp/CulturaX (200GB+ cleaned, 41B words - highest quality Italian corpus)
+- Instructions: Local JSONL files (7,836 Italian instruction-response pairs)
 """
 import torch
 from torch.utils.data import IterableDataset
@@ -16,13 +21,13 @@ class ChimeraDataset(IterableDataset):
     Streaming dataset for Chimera V1 training.
 
     Phase 1 (Knowledge Acquisition - 90% of training):
-        - 55% English Cosmopedia V2
-        - 35% Italian Wikipedia
-        - 10% Italian Instructions
+        - 55% English Cosmopedia V2 (educational content)
+        - 35% Italian CulturaX (200GB+ cleaned Italian corpus)
+        - 10% Italian Instructions (7,836 instruction-response pairs)
 
     Phase 2 (Instruction Alignment - 10% of training):
         - 20% English Cosmopedia V2
-        - 25% Italian Wikipedia
+        - 25% Italian CulturaX
         - 55% Italian Instructions
     """
 
@@ -49,7 +54,7 @@ class ChimeraDataset(IterableDataset):
             raise ValueError(f"Unknown phase: {phase}")
 
         print(f"🦁 ChimeraDataset Phase {phase} | Max Length: {max_length}")
-        print(f"📊 Ratios: EN={self.ratios['en_cosmo']:.0%}, IT_Wiki={self.ratios['it_wiki']:.0%}, IT_Instr={self.ratios['it_instruct']:.0%}")
+        print(f"📊 Ratios: EN_Cosmo={self.ratios['en_cosmo']:.0%}, IT_CulturaX={self.ratios['it_wiki']:.0%}, IT_Instr={self.ratios['it_instruct']:.0%}")
 
         # Load local instructions (fast, in-memory)
         self.it_instructions = self._load_local_instructions()
@@ -104,31 +109,42 @@ class ChimeraDataset(IterableDataset):
             raise
 
     def _get_it_stream(self):
-        """Get Italian Wikipedia stream."""
-        print("📥 Loading Italian Wikipedia stream...")
+        """Get Italian text stream from CulturaX (highest quality Italian corpus)."""
+        print("📥 Loading Italian CulturaX stream (200GB+ cleaned Italian)...")
         try:
-            # Try primary Wikipedia source
+            # CulturaX - Best Italian dataset (41B words, deeply cleaned)
             ds = load_dataset(
-                "wikimedia/wikipedia",
-                "20231101.it",
+                "uonlp/CulturaX",
+                "it",
                 split="train",
                 streaming=True
             )
             return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
         except Exception as e:
-            print(f"⚠️ Primary Wikipedia failed: {e}")
+            print(f"⚠️ CulturaX failed, trying Wikipedia fallback: {e}")
             try:
-                # Fallback to alternative source
+                # Fallback 1: Wikipedia IT
                 ds = load_dataset(
-                    "graelo/wikipedia",
-                    "20230601.it",
+                    "wikimedia/wikipedia",
+                    "20231101.it",
                     split="train",
                     streaming=True
                 )
                 return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
             except Exception as e2:
-                print(f"⚠️ Fallback Wikipedia also failed: {e2}")
-                raise
+                print(f"⚠️ Wikipedia also failed, trying secondary fallback: {e2}")
+                try:
+                    # Fallback 2: Alternative Wikipedia
+                    ds = load_dataset(
+                        "graelo/wikipedia",
+                        "20230601.it",
+                        split="train",
+                        streaming=True
+                    )
+                    return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+                except Exception as e3:
+                    print(f"⚠️ All Italian sources failed: {e3}")
+                    raise
 
     def _get_next_sample(self, source):
         """
