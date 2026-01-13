@@ -11,6 +11,7 @@ import sys
 import math
 import time
 import gc
+import glob
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -45,7 +46,7 @@ sys.path.append(os.getcwd())
 
 from src.config import NanoPrimeConfig
 from src.model import NanoPrime
-from data.elleci_dataset import EllediDataset
+from data.chimera_dataset import ChimeraDataset
 # from scripts.benchmark_chimera import ChimeraEvaluator  # Module removed
 
 import argparse
@@ -181,13 +182,42 @@ def get_lr_schedule(step, total_steps, warmup_steps, cooldown_ratio=0.2):
         cooldown_progress = (step - cooldown_start) / cooldown_steps
         return 0.5 * (1.0 + math.cos(math.pi * cooldown_progress))
 
+def cleanup_old_checkpoints(checkpoint_dir="checkpoints", keep_last=3):
+    """
+    Keep only the last N checkpoints to save disk space.
+
+    Args:
+        checkpoint_dir: Directory containing checkpoints
+        keep_last: Number of most recent checkpoints to keep
+    """
+    if not os.path.exists(checkpoint_dir):
+        return
+
+    # Find all checkpoint files
+    checkpoints = glob.glob(os.path.join(checkpoint_dir, "elleci_step_*.pth"))
+
+    if len(checkpoints) <= keep_last:
+        return
+
+    # Sort by modification time (oldest first)
+    checkpoints.sort(key=os.path.getmtime)
+
+    # Delete oldest checkpoints
+    to_delete = checkpoints[:-keep_last]
+    for ckpt in to_delete:
+        try:
+            os.remove(ckpt)
+            print(f"🗑️  Deleted old checkpoint: {os.path.basename(ckpt)}")
+        except Exception as e:
+            print(f"⚠️ Failed to delete {ckpt}: {e}")
+
 def train():
     args = parse_args()
-    
+
     TOTAL_STEPS = args.steps
     PHASE_SWITCH_STEP = int(TOTAL_STEPS * 0.9)  # Keep 90% ratio
     WARMUP_STEPS = min(1000, int(TOTAL_STEPS * 0.05))
-    SAVE_INTERVAL = 2500
+    SAVE_INTERVAL = 5000  # Increased from 2500 to save disk space
     EVAL_INTERVAL = 1000
     
     if args.dry_run:
@@ -350,7 +380,7 @@ def train():
     current_seq_len = get_current_seq_len(0, TOTAL_STEPS)
     print(f"📐 Curriculum: Starting with seq_len={current_seq_len} (will scale to 1024)")
     
-    dataset = EllediDataset(tokenizer, phase=1, max_length=current_seq_len, batch_size=config.batch_size)
+    dataset = ChimeraDataset(tokenizer, phase=1, max_length=current_seq_len, batch_size=config.batch_size)
     dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=False)
     data_iter = iter(dataloader)
     
@@ -368,7 +398,7 @@ def train():
         if new_seq_len != current_seq_len:
             print(f"\n📐 CURRICULUM: Increasing seq_len {current_seq_len} → {new_seq_len}")
             current_seq_len = new_seq_len
-            dataset = EllediDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=config.batch_size)
+            dataset = ChimeraDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=config.batch_size)
             dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
             data_iter = iter(dataloader)
         
@@ -376,7 +406,7 @@ def train():
         if step == PHASE_SWITCH_STEP:
             print("\n🔄 SWITCHING TO PHASE 2 (Alignment)...")
             current_phase = 2
-            dataset = EllediDataset(tokenizer, phase=2, max_length=current_seq_len, batch_size=config.batch_size)
+            dataset = ChimeraDataset(tokenizer, phase=2, max_length=current_seq_len, batch_size=config.batch_size)
             dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
             data_iter = iter(dataloader)
             # Update scheduler/optimizer? No, continue decay
@@ -483,9 +513,21 @@ def train():
                 pass
             model.train()
             
-        # Save
+        # Save checkpoint
         if (step + 1) % SAVE_INTERVAL == 0:
-            torch.save(model.state_dict(), f"checkpoints/elleci_step_{step+1}.pth")
+            os.makedirs("checkpoints", exist_ok=True)
+            checkpoint_path = f"checkpoints/elleci_step_{step+1}.pth"
+
+            try:
+                torch.save(model.state_dict(), checkpoint_path)
+                print(f"💾 Checkpoint saved: {checkpoint_path}")
+
+                # Cleanup old checkpoints to save disk space
+                cleanup_old_checkpoints(checkpoint_dir="checkpoints", keep_last=3)
+
+            except RuntimeError as e:
+                print(f"❌ Failed to save checkpoint: {e}")
+                print("⚠️  Continuing training without saving...")
             
     # Final Save
     torch.save(model.state_dict(), "elleci_v1_final.pth")
