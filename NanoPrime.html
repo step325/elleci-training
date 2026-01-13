@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NanoPrime: Deep Dive</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #38bdf8;
+            --accent-green: #4ade80;
+            --accent-purple: #c084fc;
+            --accent-orange: #fb923c;
+            --accent-red: #f43f5e;
+            --border-color: #334155;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0 0 10px 0;
+        }
+
+        /* TABS */
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 40px;
+        }
+
+        .tab-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            font-size: 1rem;
+        }
+
+        .tab-btn:hover {
+            background: var(--border-color);
+        }
+
+        .tab-btn.active {
+            background: var(--accent-blue);
+            color: #0f172a;
+            border-color: var(--accent-blue);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* TRAINING STYLES (From previous version) */
+        .timeline-item {
+            position: relative;
+            padding-left: 40px;
+            margin-bottom: 30px;
+            border-left: 2px solid var(--border-color);
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -9px;
+            top: 0;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: var(--bg-color);
+            border: 2px solid var(--accent-blue);
+        }
+
+        .phase-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .phase-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .step-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+
+        .step-item:last-child {
+            border-bottom: none;
+        }
+
+        .step-duration {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+
+        .highlight-blue::before {
+            border-color: var(--accent-blue);
+        }
+
+        .highlight-purple::before {
+            border-color: var(--accent-purple);
+        }
+
+        .highlight-orange::before {
+            border-color: var(--accent-orange);
+        }
+
+        .highlight-green::before {
+            border-color: var(--accent-green);
+        }
+
+        /* ARCHITECTURE STYLES */
+        .arch-grid {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+
+        .model-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            position: sticky;
+            top: 20px;
+        }
+
+        .layer-block {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .layer-block:hover {
+            border-color: var(--accent-blue);
+            transform: translateX(5px);
+        }
+
+        .layer-block.active {
+            border-color: var(--accent-blue);
+            background: rgba(56, 189, 248, 0.1);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+        }
+
+        .layer-label {
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .layer-sub {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .detail-panel {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            min-height: 500px;
+        }
+
+        .detail-content {
+            display: none;
+        }
+
+        .detail-content.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        .math-block {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            margin: 15px 0;
+            border-left: 3px solid var(--accent-purple);
+            font-size: 0.9rem;
+            overflow-x: auto;
+        }
+
+        .param-tag {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+
+        .diagram-svg {
+            width: 100%;
+            height: auto;
+            margin: 20px 0;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        /* DATA FLOW STYLES */
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 12px;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        .flow-step:hover {
+            border-color: var(--accent-blue);
+            transform: scale(1.02);
+        }
+
+        .flow-icon {
+            font-size: 2rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 12px;
+            line-height: 1;
+        }
+
+        .flow-content h3 {
+            margin: 0 0 5px 0;
+            font-size: 1.1rem;
+            color: var(--text-primary);
+        }
+
+        .flow-content p {
+            margin: 5px 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .code-box {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: inline-block;
+            margin: 5px 0;
+            font-size: 0.85rem;
+            color: var(--accent-green);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .flow-arrow {
+            font-size: 2rem;
+            color: var(--text-secondary);
+            margin: 10px 0;
+            opacity: 0.5;
+        }
+
+        .sub-step {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            border-left: 2px solid var(--border-color);
+            padding-left: 10px;
+        }
+
+        .tag {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-left: 5px;
+        }
+
+        .highlight-purple-border {
+            border-left: 4px solid var(--accent-purple);
+        }
+
+        .math_block_small {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--accent-orange);
+            margin: 5px 0;
+        }
+
+        /* NEW STYLES FROM TRAINING VISUALIZATION */
+        .bar-container {
+            margin-top: 60px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            height: 30px;
+            margin-bottom: 10px;
+        }
+
+        .bar-segment {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: rgba(0, 0, 0, 0.7);
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 60px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .curiosity-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            margin-bottom: 15px;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .curiosity-header {
+            padding: 20px;
+            font-weight: 700;
+            cursor: default;
+            color: var(--accent-blue);
+        }
+
+        .curiosity-content {
+            padding: 0 20px 20px 20px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <div style="font-family: 'JetBrains Mono'; color: var(--text-secondary); font-size: 0.9rem;">NANOPRIME V2
+            </div>
+            <h1>Training & Architecture</h1>
+            <div style="color: var(--text-secondary);">Interactive Manual</div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('process')">Training Process</button>
+            <button class="tab-btn" onclick="switchTab('flow')">Data Flow (Inference)</button>
+            <button class="tab-btn" onclick="switchTab('arch')">Architecture Details</button>
+        </div>
+
+        <!-- TAB 3: DATA FLOW (New) -->
+        <div id="flow" class="tab-content">
+            <div style="text-align: center; margin-bottom: 40px;">
+                <h2>Flusso di Inferenza End-to-End</h2>
+                <div style="color: var(--text-secondary);">Dettaglio Tecnico Completo: Dall'"Input" alla "Risposta"
+                </div>
+            </div>
+
+            <div class="flow-container">
+                <!-- STEP 1: INPUT -->
+                <div class="flow-step">
+                    <div class="flow-icon">⌨️</div>
+                    <div class="flow-content">
+                        <h3>1. Input Utente</h3>
+                        <div class="code-box">"Ciao, come stai?"</div>
+                        <p>Il prompt testuale grezzo (stringa UTF-8).</p>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <!-- STEP 2: TOKENIZER -->
+                <div class="flow-step">
+                    <div class="flow-icon">🔢</div>
+                    <div class="flow-content">
+                        <h3>2. Tokenizer (GPT-2 BPE)</h3>
+                        <div class="code-box">Token IDs: [15496, 11, 703, 257, 345, 30]</div>
+                        <p>Utilizza <strong>Byte-Pair Encoding (BPE)</strong>. Il testo viene prima scomposto in byte e
+                            poi raggruppato nei token più frequenti.</p>
+                        <div class="sub-step">
+                            <strong>Vocabolario:</strong> 50,257 token unici.
+                        </div>
+                        <div class="sub-step">
+                            <strong>Mapping:</strong> "Ciao" → <code>15496</code>, "," → <code>11</code>.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <!-- STEP 3: EMBEDDING -->
+                <div class="flow-step">
+                    <div class="flow-icon">🧩</div>
+                    <div class="flow-content">
+                        <h3>3. Embedding Layer</h3>
+                        <div class="code-box">Tensor Shape: [1, 6, 768]</div>
+                        <p>Ogni token ID viene trasformato in un vettore denso a 768 dimensioni (d_model).</p>
+                        <div class="math-block" style="margin-top: 10px; font-size: 0.8rem;">
+                            x = wte(tokens) + wpe(positions)
+                        </div>
+                        <p style="font-size: 0.85rem; margin-top: 5px;">
+                            <strong>wte (Token Emb):</strong> Contiene il significato semantico.<br>
+                            <strong>wpe (Pos Emb):</strong> Introduce l'informazione sull'ordine (assoluto).
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <!-- STEP 4: MODEL LAYERS (LOOP) -->
+                <div class="flow-step highlight-purple-border">
+                    <div class="flow-icon">🧠</div>
+                    <div class="flow-content" style="border-color: var(--accent-purple);">
+                        <h3 style="color: var(--accent-purple);">4. NanoPrime Backbone (6 Layer Ibridi)</h3>
+                        <p>Il tensore attraversa 6 blocchi alternati. Ogni blocco applica <strong>RMSNorm</strong> in
+                            pre-norm.</p>
+
+                        <div class="sub-step" style="border-left-color: var(--accent-green);">
+                            <strong>Layer Impari (Mamba Block):</strong>
+                            <br>1. <strong>Conv1d:</strong> Convoluzione causale locale (kernel=4) per catturare pattern
+                            vicini.
+                            <br>2. <strong>SSM (Selective Scan):</strong> Il core di Mamba. Aggiorna lo stato
+                            <code>h_t</code> in base all'input.
+                            <br><code style="font-size: 0.75rem;">h_t = exp(ΔA)·h_{t-1} + ΔB·x_t</code> (Selettività
+                            dipendente dall'input).
+                        </div>
+
+                        <div class="sub-step" style="border-left-color: var(--accent-purple);">
+                            <strong>Layer Pari (MLA Block):</strong>
+                            <br>1. <strong>KV Compression:</strong> Proietta Key/Value in uno spazio latente ridotto
+                            (Low-Rank).
+                            <br>2. <strong>RoPE:</strong> Applica Rotary Embeddings per la posizione relativa.
+                            <br>3. <strong>Attention:</strong> Calcola le relazioni tra tutti i token (Causal Masking
+                            attivo).
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <!-- STEP 5: LM HEAD -->
+                <div class="flow-step">
+                    <div class="flow-icon">🎯</div>
+                    <div class="flow-content">
+                        <h3>5. Output Head</h3>
+                        <div class="code-box">Logits Shape: [1, 50257]</div>
+                        <p><strong>RMSNorm Finale</strong> seguita da una proiezione lineare massiva.</p>
+                        <div class="math-block" style="margin-top: 10px; font-size: 0.8rem;">
+                            Logits = LayerNorm(x) · W_head.T
+                        </div>
+                        <p>Produce un punteggio ("logit") per oguno dei 50.257 possibili token successivi.</p>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <!-- STEP 6: SAMPLING -->
+                <div class="flow-step">
+                    <div class="flow-icon">🎲</div>
+                    <div class="flow-content">
+                        <h3>6. Sampling & Decoding</h3>
+                        <p>Trasforma i raw logits nel token successivo.</p>
+
+                        <div class="sub-step">
+                            <strong>1. Temperature Scaling (T=0.7):</strong>
+                            <br><code>logits = logits / 0.7</code> (Rende la distribuzione più uniforme/creativa).
+                        </div>
+
+                        <div class="sub-step">
+                            <strong>2. Softmax:</strong>
+                            <br>Converte i logits in probabilità (0-100%).
+                            <br><code style="font-size: 0.75rem;">P(x_i) = exp(x_i) / Σ exp(x_j)</code>
+                        </div>
+
+                        <div class="sub-step">
+                            <strong>3. Top-P (Nucleus, P=0.9):</strong>
+                            <br>Considera solo il set minimo di token la cui probabilità sommata supera il 90%. Taglia
+                            le code improbabili.
+                        </div>
+
+                        <div class="code-box" style="margin-top: 10px; border-color: var(--accent-blue);">Next Token ID:
+                            892 ("Bene")</div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <!-- STEP 7: DETOKENIZER -->
+                <div class="flow-step">
+                    <div class="flow-icon">💬</div>
+                    <div class="flow-content">
+                        <h3>7. Detokenizer & Loop</h3>
+                        <div class="code-box">Output: "Bene"</div>
+                        <p>Il token ID 892 viene riconvertito nella stringa "Bene".</p>
+                        <ul style="margin: 5px 0 0 20px; font-size: 0.9rem; color: var(--text-secondary);">
+                            <li>La parola viene aggiunta al contesto.</li>
+                            <li>Tutto il processo riparte dal punto 1 per generare la parola successiva
+                                (Autoregressive).</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 1: TRAINING PROCESS (Timeline) -->
+        <div id="process" class="tab-content active">
+            <!-- DATA LOADING -->
+            <div class="timeline-item">
+                <div class="phase-header">
+                    <span class="phase-title">0. FASE DATI (CPU)</span>
+                    <span class="phase-time">~200ms <small>(Overlay)</small></span>
+                </div>
+                <div class="card">
+                    <p style="color: var(--text-secondary); margin-bottom: 15px; font-size: 0.9rem;">
+                        Eseguito in parallelo su CPU mentre la GPU lavora allo step precedente. <strong
+                            style="color:var(--accent-green)">Non blocca il training!</strong>
+                    </p>
+                    <ul class="step-list">
+                        <li class="step-item">
+                            <span class="step-name">Download 1 sample (HF Streaming)</span>
+                            <span class="step-duration">50ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Tokenization (GPT2)</span>
+                            <span class="step-duration">30ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Padding & Tensor Creation</span>
+                            <span class="step-duration">20ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">DataLoader Batch Packing [32, 128]</span>
+                            <span class="step-duration">15ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Transfer to GPU (PCIe)</span>
+                            <span class="step-duration">10ms</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- FORWARD PASS -->
+            <div class="timeline-item highlight-blue">
+                <div class="phase-header">
+                    <span class="phase-title">1. FORWARD PASS (GPU)</span>
+                    <span class="phase-time">900ms</span>
+                </div>
+                <div class="card">
+                    <ul class="step-list">
+                        <li class="step-item">
+                            <span class="step-name">Embedding Lookup</span>
+                            <span class="step-duration">8ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name"><strong>Mamba Layers</strong> (Sequential Scan)</span>
+                            <span class="step-duration">~390ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name"><strong>MLA Attention</strong> (Compressed KV)</span>
+                            <span class="step-duration">~390ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">LM Head Projection (768 → 50257)</span>
+                            <span class="step-duration">70ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Loss Calculation</span>
+                            <span class="step-duration">35ms</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- BACKWARD PASS -->
+            <div class="timeline-item highlight-purple">
+                <div class="phase-header">
+                    <span class="phase-title">2. BACKWARD PASS</span>
+                    <span class="phase-time">1100ms</span>
+                </div>
+                <div class="card">
+                    <p style="color: var(--text-secondary); margin-bottom: 15px; font-size: 0.9rem;">
+                        Più lento del forward perché deve calcolare i gradienti <strong>E</strong> leggere le
+                        attivazioni
+                        dalla memoria.
+                    </p>
+                    <ul class="step-list">
+                        <li class="step-item">
+                            <span class="step-name">LM Head Gradients (50257×768 params!)</span>
+                            <span class="step-duration">90ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Backprop Layers (6 → 1)</span>
+                            <span class="step-duration">850ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Embedding Gradients</span>
+                            <span class="step-duration">60ms</span>
+                        </li>
+                        <li class="step-item" style="color: var(--accent-purple); font-weight: 600;">
+                            <span class="step-name">DataParallel Sync (2x GPU - PCIe)</span>
+                            <span class="step-duration">120ms</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- OPTIMIZER -->
+            <div class="timeline-item highlight-orange">
+                <div class="phase-header">
+                    <span class="phase-title">3. OPTIMIZER STEP</span>
+                    <span class="phase-time">280ms</span>
+                </div>
+                <div class="card">
+                    <ul class="step-list">
+                        <li class="step-item">
+                            <span class="step-name">Gradient Clipping</span>
+                            <span class="step-duration">15ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Mixed Precision Scaler</span>
+                            <span class="step-duration">10ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">AdamW Update (Per ogni 121M Param)</span>
+                            <span class="step-duration">240ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">LR Schedule Update</span>
+                            <span class="step-duration">15ms</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- LOGGING -->
+            <div class="timeline-item highlight-green">
+                <div class="phase-header">
+                    <span class="phase-title">4. HOUSEKEEPING</span>
+                    <span class="phase-time">75ms</span>
+                </div>
+                <div class="card">
+                    <ul class="step-list">
+                        <li class="step-item">
+                            <span class="step-name">Progress Bar Update</span>
+                            <span class="step-duration">5ms</span>
+                        </li>
+                        <li class="step-item">
+                            <span class="step-name">Memory Cleanup</span>
+                            <span class="step-duration">15ms</span>
+                        </li>
+                        <li class="step-item" style="opacity: 0.7;">
+                            <span class="step-name">Validation (Ogni 500 step)</span>
+                            <span class="step-duration">+15.00s</span>
+                        </li>
+                        <li class="step-item" style="opacity: 0.7;">
+                            <span class="step-name">Checkpoint Save (Ogni 2500 step)</span>
+                            <span class="step-duration">+8.00s</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 40px; color: var(--text-secondary);">
+                <p>Total Step Time: <strong>2.56s</strong> • Throughput: <strong>3,200 tokens/sec</strong></p>
+                <!-- STATUS PILL REMOVED AS REQUESTED -->
+            </div>
+
+            <!-- VISUAL BAR -->
+            <h3
+                style="text-align: center; margin-top: 60px; color: var(--text-secondary); text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px;">
+                Distribuzione Ciclo</h3>
+            <div class="bar-container">
+                <div class="bar-segment" style="width: 35%; background-color: var(--accent-blue);">35%</div>
+                <div class="bar-segment" style="width: 43%; background-color: var(--accent-purple);">43%</div>
+                <div class="bar-segment" style="width: 11%; background-color: var(--accent-orange);">11%</div>
+                <div class="bar-segment" style="width: 3%; background-color: var(--accent-green);">3%</div>
+                <div class="bar-segment"
+                    style="width: 8%; background-color: var(--card-bg); color: var(--text-secondary);">
+                    IO</div>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="dot" style="background: var(--accent-blue);"></div> Forward
+                </div>
+                <div class="legend-item">
+                    <div class="dot" style="background: var(--accent-purple);"></div> Backward
+                </div>
+                <div class="legend-item">
+                    <div class="dot" style="background: var(--accent-orange);"></div> Optimizer
+                </div>
+                <div class="legend-item">
+                    <div class="dot" style="background: var(--accent-green);"></div> Logs
+                </div>
+            </div>
+
+            <!-- CURIOSITIES -->
+            <h2>🔬 Curiosità Tecniche</h2>
+
+            <div class="curiosity-item">
+                <div class="curiosity-header">1. Perché Mamba è veloce ma non "istantaneo"?</div>
+                <div class="curiosity-content">
+                    Lo scan è <strong>O(N)</strong> rispetto all'Attention che è <strong>O(N²)</strong>.
+                    <br>MA: lo scan è <strong>sequenziale</strong> (token-by-token), quindi non può essere
+                    parallelizzato
+                    massicciamente come l'Attention classica.
+                    <br><em>Risultato:</em> È imbattibile su sequenze lunghe (1024+), ma su sequenze corte (128) la
+                    differenza con l'Attention è minima.
+                </div>
+            </div>
+
+            <div class="curiosity-item">
+                <div class="curiosity-header">2. Perché lm_head è così lento?</div>
+                <div class="curiosity-content">
+                    La matrice finale è gigantesca: <code>[768, 50257]</code>.
+                    <br>Contiene <strong>38.6 Milioni di parametri</strong>, ovvero il <strong>32% dell'intero
+                        modello!</strong>
+                    <br>Ogni forward pass deve calcolare: 768 × 50257 × 128 = <strong>5 miliardi di operazioni</strong>
+                    solo
+                    per l'ultimo livello.
+                </div>
+            </div>
+
+            <div class="curiosity-item">
+                <div class="curiosity-header">3. Perché DataParallel ha overhead?</div>
+                <div class="curiosity-content">
+                    Ad ogni step, il sistema deve sincronizzare <strong>242MB di gradienti</strong> tra le due GPU.
+                    <br>Le Tesla T4 non hanno NVLink veloce, quindi usano il bus PCIe (~16GB/s).
+                    <br><code>Transfer: 242MB ÷ 16GB/s = 15ms overhead</code> ad ogni singolo step.
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: ARCHITECTURE (Interactive) -->
+        <div id="arch" class="tab-content">
+            <div class="arch-grid">
+                <!-- Left Column: The Stack -->
+                <div class="model-stack">
+                    <div class="layer-block" onclick="showDetail('input')">
+                        <div class="layer-label">Input / Embedding</div>
+                        <div class="layer-sub">[Batch, Seq] → [Batch, Seq, 768]</div>
+                    </div>
+
+                    <!-- Loop for layers -->
+                    <div style="text-align:center; color: var(--text-secondary); font-size: 0.8rem; margin: 5px 0;">x6
+                        Layers (Hybrid)</div>
+
+                    <div class="layer-block" onclick="showDetail('mamba')">
+                        <div class="layer-label">Layer N: Mamba Block</div>
+                        <div class="layer-sub">SSM Scan + Conv1d + Gate</div>
+                    </div>
+
+                    <div class="layer-block" onclick="showDetail('mla')">
+                        <div class="layer-label">Layer N+1: MLA Attention</div>
+                        <div class="layer-sub">KV Compression (Low Rank)</div>
+                    </div>
+
+                    <div class="layer-block" onclick="showDetail('bitnet')">
+                        <div class="layer-label">FFN: BitNet 1.58b</div>
+                        <div class="layer-sub">Pesi Ternari {-1, 0, 1}</div>
+                    </div>
+
+                    <div class="layer-block" onclick="showDetail('output')">
+                        <div class="layer-label">Output Head</div>
+                        <div class="layer-sub">RMSNorm → Logits [50257]</div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Details Panel -->
+                <div class="detail-panel">
+
+                    <!-- DEFAULT VIEW -->
+                    <div id="detail-intro" class="detail-content active">
+                        <h2 style="margin-top:0">Architettura Ibrida NanoPrime</h2>
+                        <p>Clicca sui blocchi a sinistra per esplorare i dettagli matematici profondi.</p>
+
+                        <h3>Caratteristiche Chiave:</h3>
+                        <ul>
+                            <li><strong>Hybrid Core:</strong> Alternanza strategica di layer Mamba (per la sequenza
+                                globale) e MLA (per il richiamo associativo preciso).</li>
+                            <li><strong>BitNet 1.58b:</strong> Il Feed-Forward Network usa pesi ternari, riducendo la
+                                bandwidth di memoria necessaria del <strong>62%</strong> rispetto a FP16.</li>
+                            <li><strong>MLA (Multi-Head Latent Attention):</strong> Comprime la KV Cache del
+                                <strong>93%</strong>, permettendo contesti lunghissimi su GPU consumer.
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- MAMBA DETAIL -->
+                    <div id="detail-mamba" class="detail-content">
+                        <h2 style="color: var(--accent-green); margin-top:0">Mamba (SSM) Block</h2>
+                        <!-- SVG DIAGRAM: MAMBA -->
+                        <div
+                            style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                            <svg width="350" height="200" viewBox="0 0 350 200" xmlns="http://www.w3.org/2000/svg">
+                                <style>
+                                    .svg-text {
+                                        font-family: 'Inter', sans-serif;
+                                        font-size: 10px;
+                                        fill: #ccc;
+                                    }
+
+                                    .svg-box {
+                                        fill: none;
+                                        stroke: #4caf50;
+                                        stroke-width: 1.5;
+                                        rx: 4;
+                                    }
+
+                                    .svg-line {
+                                        stroke: #4caf50;
+                                        stroke-width: 1.5;
+                                        marker-end: url(#arrow);
+                                    }
+                                </style>
+                                <defs>
+                                    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                        <path d="M0,0 L0,6 L6,3 z" fill="#4caf50" />
+                                    </marker>
+                                </defs>
+
+                                <!-- Input -->
+                                <text x="175" y="15" text-anchor="middle" class="svg-text">Input (x)</text>
+                                <line x1="175" y1="20" x2="175" y2="40" class="svg-line" />
+
+                                <!-- Split -->
+                                <line x1="175" y1="40" x2="100" y2="60" class="svg-line" /> <!-- Left Path -->
+                                <line x1="175" y1="40" x2="250" y2="60" class="svg-line" /> <!-- Right Path (Gate) -->
+
+                                <!-- Main Branch -->
+                                <rect x="60" y="60" width="80" height="30" class="svg-box" />
+                                <text x="100" y="80" text-anchor="middle" class="svg-text">Conv1d</text>
+
+                                <line x1="100" y1="90" x2="100" y2="110" class="svg-line" />
+                                <rect x="60" y="110" width="80" height="30" class="svg-box" />
+                                <text x="100" y="130" text-anchor="middle" class="svg-text">SSM Scan</text>
+
+                                <!-- Gate Branch -->
+                                <rect x="210" y="60" width="80" height="30" class="svg-box" style="stroke: #ff9800" />
+                                <text x="250" y="80" text-anchor="middle" class="svg-text" style="fill: #ff9800">Linear
+                                    (Gate)</text>
+
+                                <line x1="250" y1="90" x2="250" y2="145" class="svg-line" style="stroke: #ff9800" />
+
+                                <!-- Merge -->
+                                <line x1="100" y1="140" x2="165" y2="160" class="svg-line" />
+                                <line x1="250" y1="145" x2="185" y2="160" class="svg-line" style="stroke: #ff9800" />
+
+                                <circle cx="175" cy="165" r="10" stroke="#ccc" fill="none" stroke-width="1.5" />
+                                <text x="175" y="169" text-anchor="middle" style="font-size: 14px; fill: #fff;">×</text>
+
+                                <line x1="175" y1="175" x2="175" y2="190" class="svg-line" />
+                                <text x="175" y="198" text-anchor="middle" class="svg-text">Output</text>
+                            </svg>
+                        </div>
+                        <p>State Space Model con <strong>Scan Selettivo</strong>. Sostituisce l'Attention quadratica
+                            O(N²) con un'operazione lineare O(N).</p>
+
+                        <h3>1. Discretizzazione (Continuous → Discrete)</h3>
+                        <p style="font-size:0.9rem">Trasforma i parametri continui A e B in discreti per il calcolo
+                            digitale.</p>
+                        <div class="math-block">
+                            Δ = Softplus(Parameter_Δ + s_Δ(x_t)) <br>
+                            Ā = exp(Δ · A) &nbsp; [Decay dello stato]<br>
+                            B̄ = Δ · B &nbsp; &nbsp; &nbsp; &nbsp; [Influenza dell'input]
+                        </div>
+
+                        <h3>2. Selective Scan (Kernel Fusione)</h3>
+                        <p style="font-size:0.9rem">A differenza delle RNN classiche, le matrici B, C e Δ dipendono
+                            dall'input <code>x_t</code>, rendendo il sistema "selettivo" (può dimenticare o ricordare a
+                            comando).</p>
+                        <div class="math-block">
+                            h_t = Ā_t · h_{t-1} + B̄_t · x_t<br>
+                            y_t = C_t · h_t + D · x_t
+                        </div>
+
+                        <h3>Specifiche Tecniche</h3>
+                        <div>
+                            <span class="param-tag">d_state=16</span>
+                            <span class="param-tag">kernel=4 (Conv1d)</span>
+                            <span class="param-tag">Algorithm=Parallel Prefix Sum</span>
+                        </div>
+                    </div>
+
+                    <!-- MLA DETAIL -->
+                    <div id="detail-mla" class="detail-content">
+                        <h2 style="color: var(--accent-purple); margin-top:0">Multi-Head Latent Attention (MLA)</h2>
+                        <!-- SVG DIAGRAM: MLA -->
+                        <div
+                            style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                            <svg width="350" height="200" viewBox="0 0 350 200" xmlns="http://www.w3.org/2000/svg">
+                                <style>
+                                    .mla-text {
+                                        font-family: 'Inter', sans-serif;
+                                        font-size: 10px;
+                                        fill: #ccc;
+                                    }
+
+                                    .mla-box {
+                                        fill: none;
+                                        stroke: #9c27b0;
+                                        stroke-width: 1.5;
+                                        rx: 4;
+                                    }
+
+                                    .mla-line {
+                                        stroke: #9c27b0;
+                                        stroke-width: 1.5;
+                                        marker-end: url(#arrow_p);
+                                    }
+                                </style>
+                                <defs>
+                                    <marker id="arrow_p" markerWidth="6" markerHeight="6" refX="5" refY="3"
+                                        orient="auto">
+                                        <path d="M0,0 L0,6 L6,3 z" fill="#9c27b0" />
+                                    </marker>
+                                </defs>
+
+                                <!-- Input -->
+                                <text x="175" y="15" text-anchor="middle" class="mla-text">Input (768)</text>
+                                <line x1="175" y1="20" x2="175" y2="40" class="mla-line" />
+
+                                <!-- Compression -->
+                                <rect x="115" y="40" width="120" height="30" class="mla-box" />
+                                <text x="175" y="60" text-anchor="middle" class="mla-text">Down Prod
+                                    (Compression)</text>
+
+                                <line x1="175" y1="70" x2="175" y2="90" class="mla-line" />
+
+                                <!-- Latent Vector -->
+                                <rect x="145" y="90" width="60" height="20" style="fill: #9c27b0; opacity: 0.3" />
+                                <text x="175" y="103" text-anchor="middle" style="font-size: 9px; fill: #fff;">Latent
+                                    (128)</text>
+
+                                <!-- Decompression -->
+                                <line x1="175" y1="110" x2="100" y2="130" class="mla-line" />
+                                <line x1="175" y1="110" x2="250" y2="130" class="mla-line" />
+
+                                <rect x="60" y="130" width="80" height="30" class="mla-box" />
+                                <text x="100" y="150" text-anchor="middle" class="mla-text">Up Proj (Key)</text>
+
+                                <rect x="210" y="130" width="80" height="30" class="mla-box" />
+                                <text x="250" y="150" text-anchor="middle" class="mla-text">Up Proj (Value)</text>
+
+                                <!-- RoPE -->
+                                <line x1="100" y1="160" x2="100" y2="175" class="mla-line" />
+                                <text x="100" y="185" text-anchor="middle" class="mla-text" style="fill: #ff9800">+
+                                    RoPE</text>
+
+                            </svg>
+                        </div>
+                        <p>Architettura introdotta da DeepSeek-V3 per annullare il collo di bottiglia della memoria KV.
+                        </p>
+
+                        <h3>1. KV Compression (Low-Rank Projection)</h3>
+                        <p style="font-size:0.9rem">Invece di salvare intere matrici K e V, salviamo un vettore latente
+                            compresso <code>c_KV</code>.</p>
+                        <div class="math-block">
+                            c_{KV} = x · W_{down} &nbsp; (Shape: 768 → 128)<br>
+                            K = c_{KV} · W_{up\_k}<br>
+                            V = c_{KV} · W_{up\_v}
+                        </div>
+
+                        <h3>2. Rotary Positional Embeddings (RoPE)</h3>
+                        <p style="font-size:0.9rem">Applicato solo a una parte dei vettori (Decoupled RoPE) per
+                            mantenere l'espressività.</p>
+                        <div class="math-block">
+                            q_{rot} = (x · W_{dq}) · R_{Θ, m}<br>
+                            k_{rot} = (c_{KV} · W_{uk}) · R_{Θ, m}
+                        </div>
+
+                        <h3>VRAM Savings</h3>
+                        <div class="math-block" style="border-color: var(--accent-green);">
+                            Standard MHA: 768 × 2 = 1536 float/token<br>
+                            MLA Latent: 128 (Compressed) + 64 (RoPE) = 192 float/token<br>
+                            <strong>Efficienza: +800% Context Window</strong> a parità di VRAM.
+                        </div>
+                    </div>
+
+                    <!-- BITNET DETAIL -->
+                    <div id="detail-bitnet" class="detail-content">
+                        <h2 style="color: var(--accent-orange); margin-top:0">BitNet 1.58b (FFN)</h2>
+                        <!-- SVG DIAGRAM: BITNET -->
+                        <div
+                            style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                            <svg width="350" height="180" viewBox="0 0 350 180" xmlns="http://www.w3.org/2000/svg">
+                                <style>
+                                    .bn-text {
+                                        font-family: 'Inter', sans-serif;
+                                        font-size: 10px;
+                                        fill: #ccc;
+                                    }
+
+                                    .bn-box {
+                                        fill: none;
+                                        stroke: #ff9800;
+                                        stroke-width: 1.5;
+                                        rx: 4;
+                                    }
+
+                                    .bn-line {
+                                        stroke: #ff9800;
+                                        stroke-width: 1.5;
+                                        marker-end: url(#arrow_O);
+                                    }
+                                </style>
+                                <defs>
+                                    <marker id="arrow_O" markerWidth="6" markerHeight="6" refX="5" refY="3"
+                                        orient="auto">
+                                        <path d="M0,0 L0,6 L6,3 z" fill="#ff9800" />
+                                    </marker>
+                                </defs>
+
+                                <!-- Weights -->
+                                <rect x="50" y="30" width="80" height="40" class="bn-box" style="stroke-dasharray: 4" />
+                                <text x="90" y="55" text-anchor="middle" class="bn-text">FP16 Weights</text>
+
+                                <line x1="130" y1="50" x2="160" y2="50" class="bn-line" />
+
+                                <rect x="160" y="30" width="140" height="40" class="bn-box"
+                                    style="fill: rgba(255, 152, 0, 0.1)" />
+                                <text x="230" y="55" text-anchor="middle" class="bn-text"
+                                    style="font-weight: bold; fill: #ff9800">Ternary {-1, 0, 1}</text>
+
+
+                                <!-- Activations -->
+                                <rect x="50" y="100" width="80" height="30" class="bn-box"
+                                    style="stroke-dasharray: 4" />
+                                <text x="90" y="120" text-anchor="middle" class="bn-text">Activations</text>
+
+                                <line x1="130" y1="115" x2="180" y2="115" class="bn-line" />
+
+                                <rect x="180" y="100" width="100" height="30" class="bn-box" />
+                                <text x="230" y="120" text-anchor="middle" class="bn-text">INT8 Quant</text>
+
+                                <!-- Mix -->
+                                <line x1="230" y1="70" x2="230" y2="90"
+                                    style="stroke: #ff9800; stroke-width: 1.5; stroke-dasharray: 2" />
+                            </svg>
+                        </div>
+                        <p>Il Feed-Forward Network non usa FP16, ma pesi quantizzati a tre stati:
+                            <code>{-1, 0, +1}</code>.
+                        </p>
+
+                        <h3>1. Weight Quantization (AbsMean)</h3>
+                        <p style="font-size:0.9rem">I pesi vengono scalati sulla media assoluta per centrare la
+                            distribuzione.</p>
+                        <div class="math-block">
+                            ɣ = mean(|W|)<br>
+                            W_{ternary} = Clamp(Round(W / ɣ), -1, 1)
+                        </div>
+
+                        <h3>2. Activation Quantization (8-bit)</h3>
+                        <p style="font-size:0.9rem">Le attivazioni in ingresso vengono portate a INT8 per accelerare il
+                            calcolo.</p>
+                        <div class="math-block">
+                            s_x = 127 / max(|x|)<br>
+                            x_{quant} = Clamp(Round(x · s_x), -128, 127)
+                        </div>
+
+                        <h3>Vantaggio Computazionale</h3>
+                        <p style="font-size:0.9rem">
+                            La moltiplicazione matriciale <code>W · x</code> diventa una serie di <strong>addizioni e
+                                sottrazioni</strong> (poiché i pesi sono solo -1, 0, 1), eliminando le costose
+                            moltiplicazioni in virgola mobile.
+                        </p>
+                    </div>
+
+                    <!-- INPUT/OUTPUT DETAIL -->
+                    <div id="detail-input" class="detail-content">
+                        <h2 style="color: var(--accent-blue); margin-top:0">Input Pipeline</h2>
+                        <h3>Embedding Layer</h3>
+                        <p>Combina il significato della parola con la sua posizione.</p>
+                        <div class="math-block">
+                            h_0 = TokenEmb(IDs) + PosEmb(Positions)<br>
+                            Size: [Batch, SeqLen, 768]
+                        </div>
+                        <p>I parametri sono imparabili e vengono aggiornati durante il training.</p>
+                    </div>
+
+                    <div id="detail-output" class="detail-content">
+                        <h2 style="color: var(--accent-blue); margin-top:0">Output Head</h2>
+                        <h3>Final Projection</h3>
+                        <p>Il componente più "pesante" del modello.</p>
+                        <div class="math-block">
+                            x_norm = RMSNorm(h_final)<br>
+                            Logits = x_norm · W_{head}^T
+                        </div>
+                        <p>Proietta il vettore di dimensione 768 nello spazio del vocabolario (50257).<br>
+                            <strong>Dimensione Matrice:</strong> 38 Milioni di parametri solo qui.
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function showDetail(detailId) {
+            // Highlight sidebar
+            document.querySelectorAll('.layer-block').forEach(block => block.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Show content
+            document.querySelectorAll('.detail-content').forEach(content => content.classList.remove('active'));
+            document.getElementById('detail-' + detailId).classList.add('active');
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,23 @@
+# Elleci V1 - Training Requirements
+# For NVIDIA RTX 4090 (24GB VRAM)
+
+# Core
+torch>=2.1.0
+transformers>=4.35.0
+tokenizers>=0.15.0
+
+# Optimization
+liger-kernel>=0.1.0
+bitsandbytes>=0.41.0
+
+# Data
+datasets>=2.14.0
+
+# Logging
+wandb>=0.15.0
+tqdm>=4.65.0
+
+# Optional (for Mamba)
+einops>=0.7.0
+causal-conv1d>=1.0.0
+mamba-ssm>=1.0.0

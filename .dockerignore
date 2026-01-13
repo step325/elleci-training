@@ -1,0 +1,8 @@
+**/node_modules
+**/.next
+**/.git
+**/.vscode
+**/__pycache__
+*.pyc
+.env.local
+.DS_Store

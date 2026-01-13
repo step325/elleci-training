@@ -1,0 +1,20 @@
+# Frontend Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY web_chat/package.json web_chat/package-lock.json ./
+RUN npm install
+
+# Copy source
+COPY web_chat .
+
+# Build Next.js app
+RUN npm run build
+
+# Expose Frontend port
+EXPOSE 3000
+
+# Run Next.js
+CMD ["npm", "start"]

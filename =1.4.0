@@ -1,0 +1,28 @@
+Collecting causal-conv1d
+  Downloading causal_conv1d-1.5.3.post1.tar.gz (24 kB)
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: torch in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from causal-conv1d) (2.4.0)
+Requirement already satisfied: packaging in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from causal-conv1d) (25.0)
+Collecting ninja (from causal-conv1d)
+  Downloading ninja-1.13.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.1 kB)
+Requirement already satisfied: filelock in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from torch->causal-conv1d) (3.20.0)
+Requirement already satisfied: typing-extensions>=4.8.0 in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from torch->causal-conv1d) (4.15.0)
+Requirement already satisfied: sympy in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from torch->causal-conv1d) (1.14.0)
+Requirement already satisfied: networkx in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from torch->causal-conv1d) (3.4.2)
+Requirement already satisfied: jinja2 in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from torch->causal-conv1d) (3.1.6)
+Collecting fsspec (from torch->causal-conv1d)
+  Downloading fsspec-2026.1.0-py3-none-any.whl.metadata (10 kB)
+Requirement already satisfied: MarkupSafe>=2.0 in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from jinja2->torch->causal-conv1d) (3.0.2)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /home/step/miniconda3/envs/elleci/lib/python3.10/site-packages (from sympy->torch->causal-conv1d) (1.3.0)
+Downloading ninja-1.13.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (180 kB)
+Downloading fsspec-2026.1.0-py3-none-any.whl (201 kB)
+Building wheels for collected packages: causal-conv1d
+  Building wheel for causal-conv1d (pyproject.toml): started
+  Building wheel for causal-conv1d (pyproject.toml): finished with status 'done'
+  Created wheel for causal-conv1d: filename=causal_conv1d-1.5.3.post1-cp310-cp310-linux_x86_64.whl size=151281320 sha256=09ed379296fddf67fe4e8fcd16b20c3daeaddb2563fe110ef137193d0c39ad61
+  Stored in directory: /tmp/pip-ephem-wheel-cache-buikg6lw/wheels/eb/a0/70/eaeeeadb241f152e4f94d71e1922a006f985a0f878fa8b66ba
+Successfully built causal-conv1d
+Installing collected packages: ninja, fsspec, causal-conv1d
+
+Successfully installed causal-conv1d-1.5.3.post1 fsspec-2026.1.0 ninja-1.13.0
