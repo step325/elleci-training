@@ -301,7 +301,7 @@ def train():
     # 3. Optimizer with LeRaC (per-layer learning rates)
     lr = 1.0e-4  # Lowered from 3e-4 for stability
     
-    param_groups = create_lerac_param_groups(model, base_lr=lr, warmup_ratio=2.0)
+    param_groups = create_lerac_param_groups(model, base_lr=lr, warmup_ratio=1.5)
     
     print("🎯 LeRaC Enabled (per-layer LR curriculum):")
     for pg in param_groups[:3]:  # Show first 3
