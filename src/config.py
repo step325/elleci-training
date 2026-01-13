@@ -70,10 +70,10 @@ class ThinkingLoopConfig:
 class NanoPrimeConfig:
     """Main model configuration"""
     # Model architecture
-    d_model: int = 768
-    n_layers: int = 12
-    vocab_size: int = 50304   # GPT-2 vocab size (padded to multiple of 64)
-    max_seq_len: int = 128
+    d_model: int = 2048  # 1.5B model
+    n_layers: int = 24
+    vocab_size: int = 32128   # Elleci tokenizer vocab size
+    max_seq_len: int = 1024
     
     # Sub-module configs
     bitnet: BitNetConfig = field(default_factory=BitNetConfig)

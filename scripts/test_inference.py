@@ -36,7 +36,11 @@ def generate(model, tokenizer, prompt, max_new_tokens=100, temperature=0.7, top_
     with torch.no_grad():
         for _ in range(max_new_tokens):
             outputs = model(input_ids)
-            logits = outputs[:, -1, :] / temperature
+            # Handle model output - could be tuple or tensor
+            if isinstance(outputs, tuple):
+                logits = outputs[0][:, -1, :] / temperature
+            else:
+                logits = outputs[:, -1, :] / temperature
             
             # Top-p sampling
             sorted_logits, sorted_indices = torch.sort(logits, descending=True)
@@ -69,7 +73,7 @@ def main():
     
     # Load tokenizer
     print("📝 Loading tokenizer...")
-    tokenizer = PreTrainedTokenizerFast.from_pretrained("models/tokenizers/elleci_bpe_32k")
+    tokenizer = PreTrainedTokenizerFast.from_pretrained("tokenizer_chimera_v2_patched")
     
     # Load model
     model = load_model(args.checkpoint)

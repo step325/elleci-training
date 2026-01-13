@@ -120,8 +120,8 @@ class Mamba2Block(nn.Module):
         # 4. Gate with z
         y = y * self.act(z)
         
-        # 5. Optional normalization
-        # y = self.norm(y)
+        # 5. Normalization (CRITICAL for stability!)
+        y = self.norm(y)
         
         # 6. Output projection
         output = self.out_proj(y)
