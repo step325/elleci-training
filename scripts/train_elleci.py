@@ -54,8 +54,8 @@ import argparse
 # Default Configuration
 DEFAULT_TOTAL_STEPS = 50_000
 DEFAULT_PHASE_SWITCH = 45_000
-GRAD_ACCUM_STEPS = 8  # With batch_size=8, effective batch = 64
-DEFAULT_BATCH_SIZE = 8  # Increased for 24GB VRAM (4090)
+GRAD_ACCUM_STEPS = 16  # With batch_size=4, effective batch = 64
+DEFAULT_BATCH_SIZE = 4  # Reduced for 512 seq_len (VRAM safety)
 BNB_AVAILABLE = False
 LION_AVAILABLE = False
 try:
@@ -114,8 +114,7 @@ def print_vram_breakdown(model, batch_size, seq_len, d_model, n_layers=24):
 # ======== CURRICULUM LEARNING SCHEDULE ========
 # Start with short sequences (faster), scale up
 SEQ_CURRICULUM = [
-    (0.30, 256),   # First 30% of steps: seq=256 (17x faster)
-    (0.70, 512),   # 30-70%: seq=512 (9x faster)
+    (0.70, 512),   # First 70%: seq=512 (skip 256 to avoid overfitting)
     (1.00, 1024),  # Last 30%: full seq=1024
 ]
 
