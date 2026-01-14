@@ -126,33 +126,88 @@ def get_current_seq_len(step, total_steps):
             return seq_len
     return SEQ_CURRICULUM[-1][1]
 
-def create_lerac_param_groups(model, base_lr=1.5e-3, warmup_ratio=5.0):
+def create_lerac_param_groups(model, base_lr=1.5e-3, warmup_ratio=5.0, weight_decay=0.1):
     """
-    LeRaC: Learning Rate Curriculum
+    LeRaC: Learning Rate Curriculum with SELECTIVE WEIGHT DECAY
     Higher LR for early layers, lower for deep layers.
-    Improves convergence by 65%!
+    CRITICAL: Weight decay is NOT applied to bias, LayerNorm, or embeddings.
     """
     param_groups = []
     n_layers = len(model.blocks)
     
-    # Embeddings: base LR
+    # Function to check if param should have weight decay
+    def should_decay(name):
+        # No decay for bias terms
+        if 'bias' in name:
+            return False
+        # No decay for LayerNorm/RMSNorm parameters
+        if 'norm' in name.lower() or 'ln' in name.lower():
+            return False
+        # No decay for embeddings
+        if 'emb' in name.lower():
+            return False
+        return True
+    
+    # Embeddings: base LR, NO weight decay
     emb_params = list(model.token_emb.parameters()) + list(model.pos_emb.parameters())
     if emb_params:
-        param_groups.append({'params': emb_params, 'lr': base_lr, 'name': 'embeddings'})
+        param_groups.append({
+            'params': emb_params, 
+            'lr': base_lr, 
+            'weight_decay': 0.0,  # No decay for embeddings
+            'name': 'embeddings'
+        })
     
-    # Blocks: decreasing LR from early to deep
+    # Blocks: decreasing LR from early to deep, selective weight decay
     for i, block in enumerate(model.blocks):
         # Early layers get higher LR
         layer_ratio = 1.0 + (n_layers - i - 1) * (warmup_ratio - 1.0) / max(1, n_layers - 1)
         layer_lr = base_lr * layer_ratio
-        block_params = list(block.parameters())
-        if block_params:
-            param_groups.append({'params': block_params, 'lr': layer_lr, 'name': f'block_{i}'})
+        
+        # Separate decay/no-decay params
+        decay_params = []
+        no_decay_params = []
+        for name, param in block.named_parameters():
+            if param.requires_grad:
+                if should_decay(name):
+                    decay_params.append(param)
+                else:
+                    no_decay_params.append(param)
+        
+        if decay_params:
+            param_groups.append({
+                'params': decay_params, 
+                'lr': layer_lr, 
+                'weight_decay': weight_decay,
+                'name': f'block_{i}_decay'
+            })
+        if no_decay_params:
+            param_groups.append({
+                'params': no_decay_params, 
+                'lr': layer_lr, 
+                'weight_decay': 0.0,
+                'name': f'block_{i}_no_decay'
+            })
     
-    # Head: base LR
-    head_params = list(model.norm_f.parameters()) + list(model.lm_head.parameters())
-    if head_params:
-        param_groups.append({'params': head_params, 'lr': base_lr, 'name': 'head'})
+    # Head: base LR, selective decay
+    head_decay = [p for n, p in model.lm_head.named_parameters() if p.requires_grad and should_decay(n)]
+    head_no_decay = [p for n, p in model.lm_head.named_parameters() if p.requires_grad and not should_decay(n)]
+    head_no_decay += list(model.norm_f.parameters())  # LayerNorm always no decay
+    
+    if head_decay:
+        param_groups.append({
+            'params': head_decay, 
+            'lr': base_lr, 
+            'weight_decay': weight_decay,
+            'name': 'head_decay'
+        })
+    if head_no_decay:
+        param_groups.append({
+            'params': head_no_decay, 
+            'lr': base_lr, 
+            'weight_decay': 0.0,
+            'name': 'head_no_decay'
+        })
     
     return param_groups
 # =============================================

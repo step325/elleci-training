@@ -45,6 +45,10 @@ class NanoPrimeBlock(nn.Module):
         super().__init__()
         self.use_mamba = use_mamba
         
+        # Dropout for regularization (prevents overfitting)
+        dropout_rate = getattr(config, 'dropout', 0.1)
+        self.dropout = nn.Dropout(dropout_rate)
+        
         # Attention mechanism
         if use_mamba:
             # Use Mamba-2 if enabled in config, else fallback to v1
@@ -67,11 +71,11 @@ class NanoPrimeBlock(nn.Module):
         self.norm2 = nn.LayerNorm(config.d_model)
         
     def forward(self, x):
-        # Attention + residual
-        x = x + self.attn(self.norm1(x))
+        # Attention + dropout + residual
+        x = x + self.dropout(self.attn(self.norm1(x)))
         
-        # FFN + residual
-        x = x + self.ffn(self.norm2(x))
+        # FFN + dropout + residual
+        x = x + self.dropout(self.ffn(self.norm2(x)))
         
         return x
 
@@ -243,7 +247,8 @@ class NanoPrime(nn.Module):
                 main_loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)),
                     targets.view(-1),
-                    ignore_index=-100
+                    ignore_index=-100,
+                    label_smoothing=0.1  # Prevents overconfidence
                 )
                 logits = None  # Not computed in fused mode
             else:
@@ -252,7 +257,8 @@ class NanoPrime(nn.Module):
                 main_loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)),
                     targets.view(-1),
-                    ignore_index=-100
+                    ignore_index=-100,
+                    label_smoothing=0.1  # Prevents overconfidence
                 )
             
             # Add load balancing loss if router was used

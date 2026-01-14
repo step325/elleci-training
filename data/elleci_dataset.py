@@ -110,7 +110,7 @@ class EllediDataset(IterableDataset):
                 split="train",
                 streaming=True
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=10000))
         except Exception as e:
             print(f"⚠️ Error loading Cosmopedia: {e}")
             raise
@@ -126,7 +126,7 @@ class EllediDataset(IterableDataset):
                 split="train",
                 streaming=True
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=10000))
         except Exception as e:
             print(f"⚠️ CulturaX failed, trying Wikipedia fallback: {e}")
             try:
@@ -137,7 +137,7 @@ class EllediDataset(IterableDataset):
                     split="train",
                     streaming=True
                 )
-                return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+                return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=10000))
             except Exception as e2:
                 print(f"⚠️ Wikipedia also failed, trying secondary fallback: {e2}")
                 try:
@@ -148,7 +148,7 @@ class EllediDataset(IterableDataset):
                         split="train",
                         streaming=True
                     )
-                    return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+                    return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=10000))
                 except Exception as e3:
                     print(f"⚠️ All Italian sources failed: {e3}")
                     raise
@@ -162,7 +162,7 @@ class EllediDataset(IterableDataset):
                 split="train",
                 streaming=True
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=10000))
         except Exception as e:
             print(f"⚠️ StackOverflow Italian dataset failed to load: {e}")
             print("   Continuing with local instructions only...")
@@ -177,7 +177,7 @@ class EllediDataset(IterableDataset):
                 split="train",
                 streaming=True
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=10000))
         except Exception as e:
             print(f"⚠️ Quora Italian dataset failed to load: {e}")
             print("   Continuing with local instructions only...")
