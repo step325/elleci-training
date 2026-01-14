@@ -45,8 +45,10 @@ logs/
 *.pt
 *.ckpt
 
-# Data cache
+# Data
 data/cache/
+data/*.jsonl
+data/*.bin
 *.cache
 
 # OS

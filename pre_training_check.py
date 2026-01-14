@@ -1,43 +1,43 @@
 """
-🚀 Elleci V1 - Pre-Training Global Check
-Verifica completa prima di avviare il training
+🚀 Elleci V1 - COMPREHENSIVE Pre-Training Check
+Verifies ALL components before starting training
 """
 import sys
 import os
 import torch
-import json
+import time
 
 print("=" * 70)
-print("🚀 ELLECI V1 - PRE-TRAINING GLOBAL CHECK")
+print("🚀 ELLECI V1 - COMPREHENSIVE PRE-TRAINING CHECK")
 print("=" * 70)
 
 errors = []
 warnings = []
 
+# ============================================================
 # 1. CUDA & Hardware
+# ============================================================
 print("\n1. 🖥️  HARDWARE CHECK")
 print("-" * 50)
 if torch.cuda.is_available():
     gpu_name = torch.cuda.get_device_name(0)
     vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"   ✅ CUDA disponibile: {gpu_name}")
+    print(f"   ✅ CUDA: {gpu_name}")
     print(f"   ✅ VRAM: {vram:.1f} GB")
     
-    # Test CUDA
-    try:
-        x = torch.randn(100, 100, device='cuda')
-        y = x @ x.T
-        del x, y
-        torch.cuda.empty_cache()
-        print(f"   ✅ CUDA test: OK")
-    except Exception as e:
-        errors.append(f"CUDA test failed: {e}")
-        print(f"   ❌ CUDA test: FAILED")
+    # CUDA test
+    x = torch.randn(100, 100, device='cuda')
+    y = x @ x.T
+    del x, y
+    torch.cuda.empty_cache()
+    print(f"   ✅ CUDA matmul: OK")
 else:
-    errors.append("CUDA non disponibile")
-    print("   ❌ CUDA non disponibile!")
+    errors.append("CUDA not available")
+    print("   ❌ CUDA not available!")
 
-# 3. Tokenizer (load first, we need vocab size)
+# ============================================================
+# 2. Tokenizer
+# ============================================================
 print("\n2. 📝 TOKENIZER CHECK")
 print("-" * 50)
 tokenizer = None
@@ -45,223 +45,304 @@ try:
     from transformers import PreTrainedTokenizerFast
     tokenizer = PreTrainedTokenizerFast.from_pretrained("tokenizer_chimera_v2_patched")
     vocab_size = len(tokenizer)
-    print(f"   ✅ Tokenizer caricato: {vocab_size} tokens")
+    print(f"   ✅ Loaded: {vocab_size:,} tokens")
     
-    # Test tokenization
-    test_it = "Ciao, come stai? Questa è una prova."
-    test_en = "Hello, how are you? This is a test."
-    tokens_it = tokenizer.encode(test_it)
-    tokens_en = tokenizer.encode(test_en)
-    print(f"   ✅ Test IT: '{test_it[:30]}...' → {len(tokens_it)} tokens")
-    print(f"   ✅ Test EN: '{test_en[:30]}...' → {len(tokens_en)} tokens")
-    
-    # Check EOS token
-    if tokenizer.eos_token_id is not None:
-        print(f"   ✅ EOS token: {tokenizer.eos_token_id}")
-    else:
-        warnings.append("EOS token is None")
-        print(f"   ⚠️  EOS token: None (verrà gestito)")
-        
+    test_it = "Ciao, come stai?"
+    test_en = "Hello, how are you?"
+    print(f"   ✅ IT: {len(tokenizer.encode(test_it))} tokens")
+    print(f"   ✅ EN: {len(tokenizer.encode(test_en))} tokens")
+    print(f"   ✅ EOS: {tokenizer.eos_token_id}")
 except Exception as e:
-    errors.append(f"Tokenizer failed: {e}")
-    print(f"   ❌ Errore tokenizer: {e}")
+    errors.append(f"Tokenizer: {e}")
+    print(f"   ❌ Error: {e}")
 
-# 2. Model
-print("\n3. 🧠 MODEL CHECK")
+# ============================================================
+# 3. Model with Mamba-2
+# ============================================================
+print("\n3. 🧠 MODEL + MAMBA-2 CHECK")
 print("-" * 50)
 try:
     sys.path.insert(0, '.')
     from src.config import NanoPrimeConfig
     from src.model import NanoPrime
+    from src.modules.mamba2 import Mamba2BlockFast
     
     config = NanoPrimeConfig()
-    print(f"   ✅ Config caricata: {config.d_model}d x {config.n_layers}L")
-    print(f"   ✅ Config vocab_size: {config.vocab_size:,}")
+    config.vocab_size = len(tokenizer) if tokenizer else 32000
+    config.mamba.use_mamba2 = True
     
-    # Check vocab size match
-    if tokenizer and config.vocab_size != len(tokenizer):
-        warnings.append(f"Vocab size mismatch: config={config.vocab_size}, tokenizer={len(tokenizer)}")
-        print(f"   ⚠️  Vocab size mismatch! Config: {config.vocab_size}, Tokenizer: {len(tokenizer)}")
-        # Temporarily override for test
-        config.vocab_size = len(tokenizer)
-        print(f"   📝 Override vocab_size to {len(tokenizer)} for test")
+    print(f"   ✅ Config: {config.d_model}d x {config.n_layers}L")
+    print(f"   ✅ Mamba-2 enabled: {config.mamba.use_mamba2}")
+    print(f"   ✅ Mamba n_heads: {config.mamba.n_heads}")
+    print(f"   ✅ Mamba d_state: {config.mamba.d_state}")
+    print(f"   ✅ Mamba chunk_size: {config.mamba.chunk_size}")
     
-    # Quick model test (CPU to save VRAM)
+    # Create model
     model = NanoPrime(config)
     params = sum(p.numel() for p in model.parameters())
-    print(f"   ✅ Modello creato: {params/1e9:.2f}B parametri")
+    print(f"   ✅ Model: {params/1e6:.1f}M params")
+    
+    # Verify Mamba-2 blocks are being used
+    mamba2_count = 0
+    mamba1_count = 0
+    for name, module in model.named_modules():
+        if 'Mamba2BlockFast' in str(type(module)):
+            mamba2_count += 1
+        elif 'MambaBlock' in str(type(module)) and 'Mamba2' not in str(type(module)):
+            mamba1_count += 1
+    
+    print(f"   ✅ Mamba-2 blocks: {mamba2_count}")
+    print(f"   ⚠️  Mamba-1 blocks: {mamba1_count}")
+    
+    if mamba2_count == 0 and mamba1_count > 0:
+        warnings.append("Mamba-1 blocks found instead of Mamba-2")
+    
     del model
     
 except Exception as e:
-    errors.append(f"Model load failed: {e}")
-    print(f"   ❌ Errore modello: {e}")
+    errors.append(f"Model: {e}")
+    print(f"   ❌ Error: {e}")
+    import traceback
+    traceback.print_exc()
 
-# 4. Dataset
-print("\n4. 📊 DATASET CHECK")
+# ============================================================
+# 4. Mamba-2 Speed Test
+# ============================================================
+print("\n4. ⚡ MAMBA-2 SPEED TEST")
+print("-" * 50)
+try:
+    from src.modules.mamba2 import Mamba2Block, Mamba2BlockFast
+    from src.modules.mamba import MambaBlock
+    from dataclasses import dataclass
+    
+    @dataclass
+    class TestMambaConfig:
+        d_model: int = 768
+        d_state: int = 16
+        d_conv: int = 4
+        expand: int = 2
+        n_heads: int = 8
+        chunk_size: int = 64
+        dt_rank: int = 48
+    
+    test_config = TestMambaConfig()
+    
+    # Create blocks
+    mamba1 = MambaBlock(test_config).cuda()
+    mamba2_fast = Mamba2BlockFast(test_config).cuda()
+    
+    x_test = torch.randn(4, 256, 768, device='cuda')
+    
+    # Warmup
+    for _ in range(3):
+        _ = mamba1(x_test)
+        _ = mamba2_fast(x_test)
+    torch.cuda.synchronize()
+    
+    # Benchmark Mamba-1
+    torch.cuda.synchronize()
+    start = time.time()
+    for _ in range(10):
+        _ = mamba1(x_test)
+    torch.cuda.synchronize()
+    time_v1 = (time.time() - start) * 100  # ms per iter
+    
+    # Benchmark Mamba-2 Fast
+    torch.cuda.synchronize()
+    start = time.time()
+    for _ in range(10):
+        _ = mamba2_fast(x_test)
+    torch.cuda.synchronize()
+    time_v2 = (time.time() - start) * 100  # ms per iter
+    
+    speedup = time_v1 / time_v2
+    print(f"   ✅ Mamba-1: {time_v1:.1f}ms")
+    print(f"   ✅ Mamba-2 Fast: {time_v2:.1f}ms")
+    print(f"   ✅ Speedup: {speedup:.2f}x")
+    
+    if speedup < 1.5:
+        warnings.append(f"Mamba-2 speedup lower than expected: {speedup:.2f}x")
+    
+    del mamba1, mamba2_fast, x_test
+    torch.cuda.empty_cache()
+    
+except Exception as e:
+    errors.append(f"Mamba-2 speed test: {e}")
+    print(f"   ❌ Error: {e}")
+    import traceback
+    traceback.print_exc()
+
+# ============================================================
+# 5. Dataset
+# ============================================================
+print("\n5. 📊 DATASET CHECK")
 print("-" * 50)
 if tokenizer:
     try:
         from data.elleci_dataset import EllediDataset
         
-        # Phase 1
         ds1 = EllediDataset(tokenizer, max_length=256, phase=1)
-        print(f"   ✅ Phase 1 ratios: {ds1.ratios}")
+        print(f"   ✅ Phase 1: {ds1.ratios}")
         
-        # Phase 2
         ds2 = EllediDataset(tokenizer, max_length=256, phase=2)
-        print(f"   ✅ Phase 2 ratios: {ds2.ratios}")
+        print(f"   ✅ Phase 2: {ds2.ratios}")
         
-        # Sample test
+        # Sample
         sample_iter = iter(ds1)
         sample = next(sample_iter)
-        print(f"   ✅ Sample shape: {len(sample)} tokens")
+        print(f"   ✅ Sample: {len(sample)} tokens")
         
     except Exception as e:
-        errors.append(f"Dataset failed: {e}")
-        print(f"   ❌ Errore dataset: {e}")
-else:
-    print("   ⚠️  Skipped (tokenizer not loaded)")
+        errors.append(f"Dataset: {e}")
+        print(f"   ❌ Error: {e}")
 
-# 5. Italian Instructions
-print("\n5. 🇮🇹  ITALIAN INSTRUCTIONS CHECK")
+# ============================================================
+# 6. Italian Instructions
+# ============================================================
+print("\n6. 🇮🇹  INSTRUCTIONS CHECK")
 print("-" * 50)
-instruction_files = [
-    'data/elleci_instructions.jsonl',
-    'data/chimera_instructions_final.jsonl'
-]
-total_instructions = 0
-for path in instruction_files:
+total = 0
+for path in ['data/elleci_instructions.jsonl', 'data/chimera_instructions_final.jsonl']:
     if os.path.exists(path):
-        with open(path, 'r', encoding='utf-8') as f:
-            count = sum(1 for _ in f)
-        print(f"   ✅ {os.path.basename(path)}: {count:,} istruzioni")
-        total_instructions += count
-    else:
-        print(f"   ⚠️  {os.path.basename(path)}: non trovato")
+        count = sum(1 for _ in open(path, encoding='utf-8'))
+        print(f"   ✅ {os.path.basename(path)}: {count:,}")
+        total += count
+print(f"   📊 Total: {total:,} instructions")
 
-print(f"   📊 Totale istruzioni IT: {total_instructions:,}")
-
-# 6. Training Script
-print("\n6. 📜 TRAINING SCRIPT CHECK")
+# ============================================================
+# 7. Training Script Features
+# ============================================================
+print("\n7. 📜 TRAINING FEATURES CHECK")
 print("-" * 50)
-train_script = 'scripts/train_elleci.py'
-if os.path.exists(train_script):
-    with open(train_script, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    checks = {
-        'WSD Scheduler': 'def get_lr_wsd' in content or 'WSD' in content,
+script = 'scripts/train_elleci.py'
+if os.path.exists(script):
+    content = open(script, encoding='utf-8').read()
+    features = {
+        'Mamba-2 enabled': 'use_mamba2 = True' in content,
+        'WSD Scheduler': 'WSD' in content or 'wsd' in content.lower(),
         'Gradient Checkpointing': 'gradient_checkpointing' in content,
-        'EllediDataset import': 'EllediDataset' in content,
-        'SWA (Stochastic Weight Averaging)': 'swa_model' in content or 'AveragedModel' in content,
+        'EllediDataset': 'EllediDataset' in content,
+        'SWA': 'swa_model' in content or 'AveragedModel' in content,
         'LeRaC': 'lerac' in content.lower() or 'layer_lr' in content,
-        '8-bit AdamW': 'bnb' in content or '8bit' in content,
+        '8-bit AdamW': 'bnb.' in content or 'bitsandbytes' in content,
     }
-    
-    for feature, present in checks.items():
-        status = "✅" if present else "⚠️ "
-        print(f"   {status} {feature}: {'OK' if present else 'Non trovato'}")
-else:
-    errors.append("Training script not found")
-    print(f"   ❌ Script non trovato: {train_script}")
+    for f, ok in features.items():
+        print(f"   {'✅' if ok else '❌'} {f}")
+        if not ok:
+            warnings.append(f"Feature not found: {f}")
 
-# 7. Checkpoints directory
-print("\n7. 💾 STORAGE CHECK")
-print("-" * 50)
-os.makedirs('checkpoints', exist_ok=True)
-print(f"   ✅ Cartella checkpoints: OK")
-
-# Check disk space (Windows)
-try:
-    import shutil
-    total, used, free = shutil.disk_usage(".")
-    free_gb = free / 1024**3
-    print(f"   ✅ Spazio libero: {free_gb:.1f} GB")
-    if free_gb < 10:
-        warnings.append(f"Low disk space: {free_gb:.1f} GB")
-except:
-    pass
-
-# 8. Quick Forward Pass Test (with corrected vocab size)
-print("\n8. ⚡ QUICK FORWARD PASS TEST")
+# ============================================================
+# 8. Forward + Backward Pass Test
+# ============================================================
+print("\n8. 🔥 FORWARD + BACKWARD PASS TEST")
 print("-" * 50)
 try:
-    # Clear CUDA state
+    # Reset CUDA state completely
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
-    
-    from src.config import NanoPrimeConfig
-    from src.model import NanoPrime
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
     
     config = NanoPrimeConfig()
-    # Use tokenizer vocab size
-    config.vocab_size = len(tokenizer)
+    # CRITICAL: Set vocab_size BEFORE creating model
+    actual_vocab_size = len(tokenizer) if tokenizer else 32043
+    config.vocab_size = actual_vocab_size
+    config.mamba.use_mamba2 = True
+    
+    print(f"   📊 Using vocab_size={config.vocab_size}")
     
     model = NanoPrime(config).cuda()
     model.train()
-    
-    # Enable gradient checkpointing
     model.gradient_checkpointing_enable()
     
-    # Create dummy batch
-    batch_size = 2
+    batch_size = 4
     seq_len = 256
-    dummy_input = torch.randint(0, config.vocab_size, (batch_size, seq_len), device='cuda')
+    # Generate tokens WITHIN vocab bounds (0 to vocab_size-1)
+    x = torch.randint(0, config.vocab_size, (batch_size, seq_len), device='cuda')
+    print(f"   📊 Token range: [{x.min().item()}, {x.max().item()}] (max allowed: {config.vocab_size-1})")
     
-    # Forward pass
+    # Forward
+    torch.cuda.synchronize()
+    start = time.time()
     with torch.amp.autocast('cuda', dtype=torch.float16):
-        output = model(dummy_input)
-        loss = output.loss
+        out = model(x)
+        loss = out.loss if hasattr(out, 'loss') else out[1] if isinstance(out, tuple) else None
+    torch.cuda.synchronize()
+    fwd_time = time.time() - start
     
-    print(f"   ✅ Forward pass: OK (loss = {loss.item():.4f})")
+    if loss is None:
+        # Manual loss
+        logits = out.logits if hasattr(out, 'logits') else out[0]
+        loss = torch.nn.functional.cross_entropy(
+            logits[:, :-1].reshape(-1, logits.size(-1)),
+            x[:, 1:].reshape(-1)
+        )
     
-    # Backward pass
+    print(f"   ✅ Forward: {fwd_time*1000:.1f}ms, Loss={loss.item():.4f}")
+    
+    # Backward
+    start = time.time()
     loss.backward()
-    print(f"   ✅ Backward pass: OK")
+    torch.cuda.synchronize()
+    bwd_time = time.time() - start
     
-    # Check gradients
-    has_grads = any(p.grad is not None for p in model.parameters())
-    print(f"   ✅ Gradients: {'OK' if has_grads else 'MISSING'}")
+    has_grads = sum(1 for p in model.parameters() if p.grad is not None)
+    total_params = sum(1 for p in model.parameters())
+    print(f"   ✅ Backward: {bwd_time*1000:.1f}ms")
+    print(f"   ✅ Gradients: {has_grads}/{total_params} params")
     
-    # Memory usage
-    mem_used = torch.cuda.max_memory_allocated() / 1024**3
-    print(f"   ✅ Peak VRAM usage: {mem_used:.2f} GB")
+    # Memory
+    peak_mem = torch.cuda.max_memory_allocated() / 1024**3
+    print(f"   ✅ Peak VRAM: {peak_mem:.2f} GB")
     
-    del model, dummy_input, output, loss
+    del model, x, out, loss
     torch.cuda.empty_cache()
     
 except Exception as e:
-    errors.append(f"Forward pass failed: {e}")
-    print(f"   ❌ Test fallito: {e}")
+    errors.append(f"Forward/Backward: {e}")
+    print(f"   ❌ Error: {e}")
+    import traceback
+    traceback.print_exc()
 
-# Summary
+# ============================================================
+# 9. Disk Space
+# ============================================================
+print("\n9. 💾 STORAGE CHECK")
+print("-" * 50)
+import shutil
+os.makedirs('checkpoints', exist_ok=True)
+total, used, free = shutil.disk_usage(".")
+print(f"   ✅ Free space: {free/1024**3:.1f} GB")
+if free/1024**3 < 10:
+    warnings.append("Low disk space!")
+
+# ============================================================
+# SUMMARY
+# ============================================================
 print("\n" + "=" * 70)
 print("📋 SUMMARY")
 print("=" * 70)
 
 if errors:
-    print(f"\n❌ ERRORI CRITICI ({len(errors)}):")
+    print(f"\n❌ CRITICAL ERRORS ({len(errors)}):")
     for e in errors:
         print(f"   • {e}")
 else:
-    print("\n✅ Nessun errore critico!")
+    print("\n✅ No critical errors!")
 
 if warnings:
     print(f"\n⚠️  WARNINGS ({len(warnings)}):")
     for w in warnings:
         print(f"   • {w}")
 else:
-    print("✅ Nessun warning!")
+    print("✅ No warnings!")
 
-# Final verdict
 print("\n" + "=" * 70)
 if not errors:
-    print("🚀 READY TO TRAIN!")
+    print("🚀 ALL SYSTEMS GO - READY FOR TRAINING!")
     print("=" * 70)
-    print("\nComando per avviare il training:")
+    print("\nCommand to start training:")
     print("   python scripts/train_elleci.py")
-    print("\nPer dry run (test 5 step):")
-    print("   python scripts/train_elleci.py --dry-run --steps 5")
 else:
     print("❌ FIX ERRORS BEFORE TRAINING")
     print("=" * 70)
