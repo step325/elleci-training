@@ -272,9 +272,13 @@ class EllediDataset(IterableDataset):
     def __iter__(self):
         """
         Yield batches of tokenized sequences.
-        Direct streaming, no buffering.
+        Uses PACKING: accumulates complete texts with EOS until max_length.
+        This ensures the model always sees complete sentences, not truncated ones.
         """
         batch = []
+        
+        # Token buffer for packing multiple texts
+        token_buffer = []
 
         while True:
             # Select source based on ratios
@@ -296,25 +300,30 @@ class EllediDataset(IterableDataset):
             try:
                 tokens = self.tokenizer.encode(text)
 
-                # Add EOS token
+                # Skip very short sequences
+                if len(tokens) < 10:
+                    continue
+                
+                # Add EOS token after each text (CRITICAL: marks sentence boundary)
                 eos_id = self.tokenizer.eos_token_id
                 if eos_id is not None:
                     tokens.append(eos_id)
 
-                # Truncate if too long
-                if len(tokens) > self.max_length:
-                    tokens = tokens[:self.max_length]
+                # PACKING: Add tokens to buffer
+                token_buffer.extend(tokens)
+                
+                # When buffer is full, extract a training sample
+                while len(token_buffer) >= self.max_length:
+                    # Take exactly max_length tokens
+                    sample_tokens = token_buffer[:self.max_length]
+                    token_buffer = token_buffer[self.max_length:]
+                    
+                    batch.append(torch.tensor(sample_tokens, dtype=torch.long))
 
-                # Skip very short sequences
-                if len(tokens) < 10:
-                    continue
-
-                batch.append(torch.tensor(tokens, dtype=torch.long))
-
-                # Yield batch when full
-                if len(batch) >= self.batch_size:
-                    yield self._collate(batch)
-                    batch = []
+                    # Yield batch when full
+                    if len(batch) >= self.batch_size:
+                        yield self._collate(batch)
+                        batch = []
 
             except Exception as e:
                 # Skip problematic samples
