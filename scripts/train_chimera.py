@@ -85,8 +85,8 @@ def create_lerac_param_groups(model, base_lr=1.5e-3, warmup_ratio=5.0):
     param_groups = []
     n_layers = len(model.blocks)
     
-    # Embeddings: base LR
-    emb_params = list(model.token_emb.parameters()) + list(model.pos_emb.parameters())
+    # Embeddings: base LR (RoPE has no learnable params)
+    emb_params = list(model.token_emb.parameters())
     if emb_params:
         param_groups.append({'params': emb_params, 'lr': base_lr, 'name': 'embeddings'})
     

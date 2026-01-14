@@ -87,8 +87,8 @@ def test_layer_outputs(model, tokenizer, device):
     input_ids = tokenizer.encode("Ciao, come stai?", return_tensors="pt").to(device)
     
     with torch.no_grad():
-        # Get embedding output
-        x = model.token_emb(input_ids) + model.pos_emb(torch.arange(input_ids.size(1), device=device))
+        # Get embedding output (RoPE provides position info in attention layers)
+        x = model.token_emb(input_ids)
         print(f"After embedding: mean={x.mean():.4f}, std={x.std():.4f}")
         
         # Check first few blocks

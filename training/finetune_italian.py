@@ -66,10 +66,9 @@ def train_italian():
     # effectively keeping the "core reasoning" stable.
     print("\n❄️ Freezing Strategy (Adapters approach):")
     
-    # Freeze Embeddings
+    # Freeze Token Embeddings (RoPE has no learnable params)
     for param in model.token_emb.parameters(): param.requires_grad = False
-    for param in model.pos_emb.parameters(): param.requires_grad = False
-    print("  - Embeddings: Frozen 🔒")
+    print("  - Token Embeddings: Frozen 🔒")
     
     # Freeze first N blocks
     N_FREEZE = 3
