@@ -88,40 +88,22 @@ class NanoPrimeBlock(nn.Module):
         else:
             self.attn = MLASelfAttention(config.mla)
         
-        # Feed-forward network (SwiGLU by default for V2)
-        # Check config for legacy support, default to SwiGLU
-        ffn_type = getattr(config, 'ffn_type', 'swiglu') 
-        
+        # FFN (V2: SwiGLU default)
+        ffn_type = getattr(config, 'ffn_type', 'swiglu')
         if ffn_type == 'swiglu':
             self.ffn = SwiGLUFFN(config.d_model)
-        elif ffn_type == 'sqrelu':
-            # Squared ReLU option (from V2-B)
-            hidden_dim = int(config.d_model * 4)
-            self.ffn = nn.Sequential(
-                BitLinear(config.d_model, hidden_dim),
-                nn.ReLU(), # We apply square manually or custom module
-                # Simplified SqReLU for inline if class not separate
-                # But better to use SwiGLU as winner
-            )
-            # Revert to SwiGLU as it's the winner, or implement SqReLU if really needed. 
-            # For now, let's strictly implement SwiGLU as the winner.
-            self.ffn = SwiGLUFFN(config.d_model) # Placeholder if sqrelu selected without class
-        else:
-            # Legacy GELU
+        else:  # Legacy GELU
             self.ffn = nn.Sequential(
                 BitLinear(config.d_model, config.d_model * 4),
                 nn.GELU(),
                 BitLinear(config.d_model * 4, config.d_model),
             )
         
-        # Normalization (RMSNorm by default for V2)
+        # Norm (V2: RMSNorm default)
         norm_type = getattr(config, 'norm_type', 'rms')
-        if norm_type == 'rms':
-            self.norm1 = RMSNorm(config.d_model)
-            self.norm2 = RMSNorm(config.d_model)
-        else:
-            self.norm1 = nn.LayerNorm(config.d_model)
-            self.norm2 = nn.LayerNorm(config.d_model)
+        NormClass = RMSNorm if norm_type == 'rms' else nn.LayerNorm
+        self.norm1 = NormClass(config.d_model)
+        self.norm2 = NormClass(config.d_model)
         
     def forward(self, x):
         # Attention + dropout + residual
@@ -302,7 +284,6 @@ class NanoPrime(nn.Module):
                     ignore_index=-100,
                     label_smoothing=0.1  # Prevents overconfidence
                 )
-                logits = None  # Not computed in fused mode
             else:
                 # Standard path (inference or fallback)
                 logits = self.lm_head(x)  # [batch, seq, vocab_size]
@@ -360,7 +341,6 @@ class NanoPrime(nn.Module):
         return idx
 
 
-import torch.nn.functional as F
 
 # Export
 __all__ = ['NanoPrime', 'NanoPrimeBlock']
