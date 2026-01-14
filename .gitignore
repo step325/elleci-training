@@ -58,4 +58,6 @@ Thumbs.db
 # Secrets
 .env
 *.key
-arxiv-mcp
+# External Modules
+arxiv-mcp/
+web_chat/
