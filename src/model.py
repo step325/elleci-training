@@ -98,9 +98,8 @@ class NanoPrime(nn.Module):
         super().__init__()
         self.config = config
         
-        # Embeddings
+        # Embeddings (RoPE is handled by MLA, no absolute pos_emb needed)
         self.token_emb = nn.Embedding(config.vocab_size, config.d_model)
-        self.pos_emb = nn.Embedding(config.max_seq_len, config.d_model)
         
         
         # Router (Optional)
@@ -175,12 +174,8 @@ class NanoPrime(nn.Module):
         """
         batch_size, seq_len = idx.shape
         
-        # Embeddings
-        tok_emb = self.token_emb(idx)  # [batch, seq, d_model]
-        pos = torch.arange(0, seq_len, dtype=torch.long, device=idx.device)
-        pos_emb = self.pos_emb(pos)  # [seq, d_model]
-        
-        x = tok_emb + pos_emb
+        # Embeddings (RoPE provides position info in attention layers)
+        x = self.token_emb(idx)  # [batch, seq, d_model]
         
         # Router decision (if enabled)
         load_balance_loss = None

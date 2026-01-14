@@ -24,7 +24,7 @@ class MLAConfig:
     d_model: int = 768
     n_heads: int = 12
     kv_lora_rank: int = 128  # Compression rank for KV cache
-    rope_dim: int = 32       # RoPE dimension
+    rope_base: int = 100000  # RoPE base (100000 = 128k context support)
     dropout: float = 0.0
     
     def __post_init__(self):

@@ -1,5 +1,5 @@
 """
-Multi-Head Latent Attention (MLA) - KV Cache Compression
+Multi-Head Latent Attention (MLA) - KV Cache Compression with RoPE
 
 Based on DeepSeek-V3 architecture for efficient attention with compressed KV cache.
 Reduces memory by ~93% compared to standard multi-head attention.
@@ -9,10 +9,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+# Import RoPE from our module
+from .rope import RotaryEmbedding, apply_rotary_pos_emb
+
 
 class MLASelfAttention(nn.Module):
     """
-    Multi-Head Latent Attention with KV compression.
+    Multi-Head Latent Attention with KV compression and RoPE.
     
     Key innovation: Compress K/V into low-rank latent space before attention.
     
@@ -30,13 +33,12 @@ class MLASelfAttention(nn.Module):
         self.n_heads = config.n_heads
         self.head_dim = config.d_model // config.n_heads
         self.kv_lora_rank = config.kv_lora_rank
-        self.rope_dim = config.rope_dim
         
         # Query projection (full dimension)
         self.w_q = nn.Linear(config.d_model, config.d_model, bias=False)
         
         # KV compression: down-project to latent, then up-project
-        self.w_kv_down = nn.Linear(config.d_model, config.kv_lora_rank + config.rope_dim, bias=False)
+        self.w_kv_down = nn.Linear(config.d_model, config.kv_lora_rank, bias=False)
         self.w_kv_up = nn.Linear(config.kv_lora_rank, config.d_model * 2, bias=False)  # *2 for K and V
         
         # Output projection
@@ -44,14 +46,13 @@ class MLASelfAttention(nn.Module):
         
         self.dropout = nn.Dropout(config.dropout)
         
-        # RoPE (Rotary Position Embedding) - precompute
-        self.register_buffer("rope_cache", None, persistent=False)
-        
-    def _apply_rope(self, x, offset=0):
-        """Apply Rotary Position Embedding to first rope_dim dimensions"""
-        # Simplified RoPE for now - just return x
-        # Full implementation would rotate first rope_dim dimensions
-        return x
+        # RoPE (Rotary Position Embedding) - 128k context support
+        rope_base = getattr(config, 'rope_base', 100000)
+        self.rotary_emb = RotaryEmbedding(
+            dim=self.head_dim, 
+            base=rope_base,
+            max_seq_len=8192
+        )
         
     def forward(self, x, mask=None, use_cache=False, past_kv=None):
         """
@@ -75,23 +76,19 @@ class MLASelfAttention(nn.Module):
         q = q.transpose(1, 2)  # [batch, n_heads, seq, head_dim]
         
         # 2. Compress to latent space
-        latent = self.w_kv_down(x)  # [batch, seq, kv_lora_rank + rope_dim]
-        
-        # Split latent and rope components
-        latent_core = latent[..., :self.kv_lora_rank]
-        rope_part = latent[..., self.kv_lora_rank:]
+        latent = self.w_kv_down(x)  # [batch, seq, kv_lora_rank]
         
         # 3. Decompress K and V
-        kv = self.w_kv_up(latent_core)  # [batch, seq, d_model*2]
+        kv = self.w_kv_up(latent)  # [batch, seq, d_model*2]
         k, v = kv.chunk(2, dim=-1)  # Each [batch, seq, d_model]
         
         # Reshape for multi-head
         k = k.view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
         
-        # 4. Apply RoPE (simplified)
-        q = self._apply_rope(q)
-        k = self._apply_rope(k)
+        # 4. Apply RoPE to Q and K
+        cos, sin = self.rotary_emb(q, seq_len=seq_len)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin)
         
         # 5. Flash Attention via SDPA (VERIFIED: 5.93x speedup!)
         # Uses optimized CUDA kernels automatically
@@ -103,13 +100,13 @@ class MLASelfAttention(nn.Module):
             scale=1.0 / math.sqrt(self.head_dim)
         )  # [batch, n_heads, seq, head_dim]
         
-        # 7. Concatenate heads and project
+        # 6. Concatenate heads and project
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.view(batch_size, seq_len, self.d_model)
         
         output = self.w_out(attn_output)
         
-        # 8. Return with optional KV cache
+        # 7. Return with optional KV cache
         if use_cache:
             # Cache the compressed latent (much smaller!)
             present_kv = latent.detach()
