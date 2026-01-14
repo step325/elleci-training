@@ -6,15 +6,15 @@ import torch
 import numpy as np
 from collections import Counter
 from transformers import PreTrainedTokenizerFast
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 import argparse
 
 def load_model(checkpoint_path, device="cuda"):
     """Load model from checkpoint."""
     print(f"📦 Loading checkpoint: {checkpoint_path}")
-    config = NanoPrimeConfig()
-    model = NanoPrime(config)
+    config = ElleciConfig()
+    model = Elleci(config)
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model.load_state_dict(state_dict)
     model.to(device)

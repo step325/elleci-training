@@ -69,9 +69,9 @@ PHASE_SWITCH = 90% (45,000 steps)
 ## 📁 File Structure
 
 ```
-NanoPrime/
+Elleci/
 ├── src/
-│   ├── model.py          # NanoPrime model
+│   ├── model.py          # Elleci model
 │   ├── config.py         # Configuration
 │   └── modules/
 │       ├── mamba.py      # Mamba SSM

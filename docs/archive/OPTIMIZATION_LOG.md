@@ -1,7 +1,7 @@
-# 🚀 NanoPrime Training Optimization Log
+# 🚀 Elleci Training Optimization Log
 
 ## 🏗️ Model Architecture & Parameters
-**Model Name:** NanoPrime v2 (Hybrid Architectures)
+**Model Name:** Elleci v2 (Hybrid Architectures)
 **Total Parameters:** ~1.5 Billion
 **Sequence Length:** 1024 tokens
 **Vocab Size:** 32,128 (tiktoken)
@@ -56,7 +56,7 @@ This document records all optimization attempts to reduce training time from ori
 | **torch.compile (Windows)** | `RuntimeError` | Triton compiler is not supported natively on Windows yet. |
 | **torch.compile (WSL2)** | `PermissionError: nvcc` | WSL2 could not access `nvcc` correctly on the mounted Windows filesystem (`/mnt/c/...`). |
 | **CUDA Graphs** | `RuntimeError` | The model/optimizer graph is too complex for simple capture (streams dependency error). Requires significant architectural rewrite to be graph-compatible. |
-| **Stochastic Depth** | `AttributeError/ShapeMismatch` | Implementation clashed with NanoPrime's specific block structure. While theoretically sound, debugging it introduced too much risk of altering model behavior. |
+| **Stochastic Depth** | `AttributeError/ShapeMismatch` | Implementation clashed with Elleci's specific block structure. While theoretically sound, debugging it introduced too much risk of altering model behavior. |
 | **Full Model Memory Test** | `OOM (0 bytes free)` | 12GB VRAM is extremely tight for 1.5B parameters. Even with 8-bit Optimizer and FP16, Windows memory fragmentation prevented allocation of the full contiguous model without checkpointing. |
 
 ---

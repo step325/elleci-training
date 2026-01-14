@@ -1,5 +1,5 @@
 """
-Generate standalone Kaggle notebook with all NanoPrime code embedded
+Generate standalone Kaggle notebook with all Elleci code embedded
 """
 import json
 
@@ -19,7 +19,7 @@ notebook = {
             "cell_type": "markdown",
             "metadata": {},
             "source": [
-                "# 🚀 NanoPrime - Standalone Kaggle Training\n",
+                "# 🚀 Elleci - Standalone Kaggle Training\n",
                 "\n",
                 "**ZERO uploads needed!** All code embedded in this notebook.\n",
                 "\n",

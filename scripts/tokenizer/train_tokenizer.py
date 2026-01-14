@@ -1,5 +1,5 @@
 """
-NanoPrime v2 - Tokenizer Training Script 🗣️
+Elleci v2 - Tokenizer Training Script 🗣️
 Trains a custom BPE Tokenizer (32k vocab) on mixed English/Italian data.
 Ratio: 60% English (SmolLM/FineWeb) / 40% Italian (CulturaX/Wiki).
 """

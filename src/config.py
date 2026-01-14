@@ -1,5 +1,5 @@
 """
-NanoPrime v2.0 - Configuration System
+Elleci v2.0 - Configuration System
 
 Centralized configuration using dataclasses for easy experimentation.
 """
@@ -67,7 +67,7 @@ class ThinkingLoopConfig:
     
 
 @dataclass
-class NanoPrimeConfig:
+class ElleciConfig:
     """Main model configuration"""
     # Model architecture
     d_model: int = 2048  # 1.5B model
@@ -133,8 +133,8 @@ class NanoPrimeConfig:
 
 if __name__ == "__main__":
     # Test config creation
-    config = NanoPrimeConfig()
-    print("NanoPrime Configuration:")
+    config = ElleciConfig()
+    print("Elleci Configuration:")
     print(f"  Model size: {config.d_model}d × {config.n_layers} layers")
     print(f"  Vocab: {config.vocab_size}")
     print(f"  Device: {config.device}")

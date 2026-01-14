@@ -5,16 +5,16 @@ Test a checkpoint to see if the model can generate coherent text.
 import torch
 import argparse
 from transformers import PreTrainedTokenizerFast
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 
 def load_model(checkpoint_path, device="cuda"):
     """Load model from checkpoint."""
     print(f"📦 Loading checkpoint: {checkpoint_path}")
     
     # Initialize config and model
-    config = NanoPrimeConfig()
-    model = NanoPrime(config)
+    config = ElleciConfig()
+    model = Elleci(config)
     
     # Load weights
     state_dict = torch.load(checkpoint_path, map_location=device)

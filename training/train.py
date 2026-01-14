@@ -1,5 +1,5 @@
 """
-NanoPrime v2.0 - Training Script
+Elleci v2.0 - Training Script
 
 Main training loop with:
 - Checkpointing
@@ -19,8 +19,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 from data.tinystories import TinyStoriesDataset, InfiniteTinyStories
 
 
@@ -28,13 +28,13 @@ def train():
     """Main training function"""
     
     # Configuration (OPTIMIZED)
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     config.n_layers = 6  # 6 layers for good balance
     config.batch_size = 16  # Increased from 8 (more examples per step)
     config.max_seq_len = 64  # Reduced from 256 (TinyStories are short ~13 tokens)
     
     print("=" * 70)
-    print("NanoPrime v2.0 Training")
+    print("Elleci v2.0 Training")
     print("=" * 70)
     print(f"Device: {config.device}")
     print(f"Layers: {config.n_layers}")
@@ -44,7 +44,7 @@ def train():
     print()
     
     # Create model
-    model = NanoPrime(config).to(config.device)
+    model = Elleci(config).to(config.device)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"✓ Model created: {total_params/1e6:.1f}M parameters\n")
     

@@ -1,5 +1,5 @@
 """
-NanoPrime v2 - Production Training on Cosmopedia
+Elleci v2 - Production Training on Cosmopedia
 
 Phase 1 of roadmap: Real dataset for quality improvement.
 
@@ -22,8 +22,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 from data.cosmopedia import CosmopediaDataset
 
 
@@ -31,7 +31,7 @@ def train_cosmopedia():
     """Train on real educational content"""
     
     # ===== CONFIGURATION =====
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     config.n_layers = 6  # Keep same architecture as v2
     config.d_model = 768
     config.batch_size = 32 # Base batch size (Will be 64 total on 2 GPUs)
@@ -50,7 +50,7 @@ def train_cosmopedia():
     EVAL_INTERVAL = 500
     
     print("=" * 70)
-    print("NanoPrime v2 - Cosmopedia Training (Production)")
+    print("Elleci v2 - Cosmopedia Training (Production)")
     print("=" * 70)
     print(f"Device: {config.device}")
     print(f"Architecture: BitNet + Mamba + MLA (v2 frozen)")
@@ -61,7 +61,7 @@ def train_cosmopedia():
     print()
     
     # Create model
-    model = NanoPrime(config).to(config.device)
+    model = Elleci(config).to(config.device)
     
     # Multi-GPU Support
     if torch.cuda.device_count() > 1:

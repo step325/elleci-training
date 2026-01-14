@@ -9,10 +9,10 @@ import uvicorn
 
 # Setup paths
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 
-app = FastAPI(title="NanoPrime v2 API")
+app = FastAPI(title="Elleci v2 API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,18 +37,18 @@ class GenerateRequest(BaseModel):
 @app.on_event("startup")
 async def load_model():
     global MODEL, TOKENIZER, CONFIG
-    print("🚀 Loading NanoPrime v2...")
+    print("🚀 Loading Elleci v2...")
     
     checkpoint_path = "nanoprime_v2_italian.pth"
     TOKENIZER = AutoTokenizer.from_pretrained("gpt2")
     TOKENIZER.pad_token = TOKENIZER.eos_token
     
-    CONFIG = NanoPrimeConfig()
+    CONFIG = ElleciConfig()
     CONFIG.n_layers = 6
     CONFIG.max_seq_len = 128 # Must match training (Cosmopedia/Instruction)
     CONFIG.device = DEVICE
     
-    MODEL = NanoPrime(CONFIG)
+    MODEL = Elleci(CONFIG)
     
     # Load weights if available
     if Path(checkpoint_path).exists():

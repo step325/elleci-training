@@ -1,9 +1,9 @@
 """
-NanoPrime v2 - Phase 2: Italian Instruction Fine-Tuning 🇮🇹
+Elleci v2 - Phase 2: Italian Instruction Fine-Tuning 🇮🇹
 
 Goal: Teach the model Italian while preserving its English reasoning capabilities.
 Strategy:
-1. Load pre-trained NanoPrime v2 (English)
+1. Load pre-trained Elleci v2 (English)
 2. Freeze lower layers (Syntax/Core) -> "Fixed Lower Layers"
 3. Fine-tune higher layers (Semantics/Language) on Camoscio dataset
 """
@@ -20,14 +20,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 from data.italian_dataset import ItalianInstructDataset
 from transformers import AutoTokenizer
 
 def train_italian():
     # ===== CONFIGURATION =====
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     config.n_layers = 6
     config.d_model = 768
     config.batch_size = 16 # Adjustable
@@ -41,11 +41,11 @@ def train_italian():
     config.weight_decay = 0.01
     
     print("=" * 70)
-    print("🇮🇹 NanoPrime v2 - Italian Fine-Tuning (Phase 2)")
+    print("🇮🇹 Elleci v2 - Italian Fine-Tuning (Phase 2)")
     print("=" * 70)
     
     # 1. Load Model
-    model = NanoPrime(config).to(config.device)
+    model = Elleci(config).to(config.device)
     
     # Load Pre-trained Checkpoint
     checkpoint_path = 'nanoprime_cosmopedia_final.pth' # The output of Phase 1

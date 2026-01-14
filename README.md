@@ -1,9 +1,9 @@
-# NanoPrime V2 (Elleci)
+# Elleci V2 (Elleci)
 
 **A 1.5B parameter hybrid LLM designed for efficiency.**
 
 ## Architecture (V2-A)
-NanoPrime V2 integrates three efficiency paradigms into a single hybrid backbone:
+Elleci V2 integrates three efficiency paradigms into a single hybrid backbone:
 
 | Component | Choice | Why? |
 |:----------|:-------|:-----|

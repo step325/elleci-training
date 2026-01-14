@@ -8,14 +8,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 print("=" * 60)
-print("NanoPrime v2.0 - Setup Validation")
+print("Elleci v2.0 - Setup Validation")
 print("=" * 60)
 
 # Test imports
 print("\n1. Testing imports...")
 try:
-    from src.config import NanoPrimeConfig
-    from src.model import NanoPrime
+    from src.config import ElleciConfig
+    from src.model import Elleci
     from data.tinystories import TinyStoriesDataset
     print("   ✓ All imports successful")
 except Exception as e:
@@ -25,7 +25,7 @@ except Exception as e:
 # Test config
 print("\n2. Testing configuration...")
 try:
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     print(f"   ✓ Config created (d_model={config.d_model}, {config.n_layers} layers)")
 except Exception as e:
     print(f"   ❌ Config error: {e}")
@@ -36,7 +36,7 @@ print("\n3. Testing model creation...")
 try:
     import torch
     config.n_layers = 2  # Small for testing
-    model = NanoPrime(config)
+    model = Elleci(config)
     params = sum(p.numel() for p in model.parameters())
     print(f"   ✓ Model created ({params/1e6:.1f}M parameters)")
 except Exception as e:

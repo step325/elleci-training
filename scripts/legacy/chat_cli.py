@@ -1,5 +1,5 @@
 """
-NanoPrime v2 - Terminal Chat Interface
+Elleci v2 - Terminal Chat Interface
 Features:
 - Maintains conversation history
 - System prompts
@@ -15,8 +15,8 @@ from transformers import AutoTokenizer
 # Add root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 
 # ANSI Colors
 GREEN = "\033[92m"
@@ -31,13 +31,13 @@ class ChatSession:
         self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
         self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        print(f"{YELLOW}Loading NanoPrime v2 from {checkpoint_path}...{RESET}")
-        self.config = NanoPrimeConfig()
+        print(f"{YELLOW}Loading Elleci v2 from {checkpoint_path}...{RESET}")
+        self.config = ElleciConfig()
         self.config.n_layers = 6
         self.config.max_seq_len = 512 # Extended for chat history
         self.config.device = device
         
-        self.model = NanoPrime(self.config)
+        self.model = Elleci(self.config)
         
         if os.path.exists(checkpoint_path):
             self.model.load_state_dict(torch.load(checkpoint_path, map_location=device))
@@ -99,7 +99,7 @@ def start_chat():
     session = ChatSession(checkpoint)
     
     print("-" * 50)
-    print(f"{BOLD}NanoPrime v2 CLI Chat{RESET}")
+    print(f"{BOLD}Elleci v2 CLI Chat{RESET}")
     print("Commands: /reset, /quit, /temp <0.1-2.0>")
     print("-" * 50)
     
@@ -132,7 +132,7 @@ def start_chat():
             continue
             
         # Generate
-        print(f"{GREEN}NanoPrime:{RESET}", end=" ", flush=True)
+        print(f"{GREEN}Elleci:{RESET}", end=" ", flush=True)
         response = session.generate_response(user_input, temperature=current_temp)
         print(response)
 

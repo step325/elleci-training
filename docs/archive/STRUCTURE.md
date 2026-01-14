@@ -1,7 +1,7 @@
-# NanoPrime - Directory Structure
+# Elleci - Directory Structure
 
 ```
-NanoPrime/
+Elleci/
 ├── README.md                    # Main documentation
 ├── Fine Ultimo.md               # Project vision
 ├── requirements.txt             # Dependencies
@@ -11,7 +11,7 @@ NanoPrime/
 │
 ├── src/                         # Core architecture (FROZEN)
 │   ├── config.py                # Configuration classes
-│   ├── model.py                 # NanoPrime main model
+│   ├── model.py                 # Elleci main model
 │   └── modules/                 # Components
 │       ├── bitnet.py            # BitLinear layers
 │       ├── mamba.py             # Mamba SSM

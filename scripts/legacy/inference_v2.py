@@ -1,5 +1,5 @@
 """
-NanoPrime v2 - Production Inference Script
+Elleci v2 - Production Inference Script
 
 Clean, fast inference without router complexity.
 Optimized for the "Fine Ultimo" vision: efficiency + reasoning.
@@ -10,20 +10,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 from transformers import AutoTokenizer
 
 
 def load_v2_model(checkpoint_path='nanoprime_v2_final.pth'):
     """Load production v2 model"""
-    print("Loading NanoPrime v2 (Production)...")
+    print("Loading Elleci v2 (Production)...")
     
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     config.n_layers = 6
     config.max_seq_len = 64
     
-    model = NanoPrime(config)
+    model = Elleci(config)
     model.load_state_dict(torch.load(checkpoint_path, map_location=config.device))
     model.to(config.device)
     model.eval()
@@ -60,7 +60,7 @@ def generate(model, tokenizer, config, prompt="", max_tokens=50, temperature=0.8
 def interactive():
     """Simple interactive loop"""
     print("\n" + "=" * 70)
-    print("NanoPrime v2 - Production Inference")
+    print("Elleci v2 - Production Inference")
     print("=" * 70)
     print("\nCommands:")
     print("  [Enter] - Generate story")
@@ -106,7 +106,7 @@ def interactive(checkpoint_path='nanoprime_v2_final.pth'):
     model, config = load_v2_model(checkpoint_path)
     
     print("-" * 50)
-    print("NanoPrime v2 Interactive Mode")
+    print("Elleci v2 Interactive Mode")
     print(f"Loaded: {checkpoint_path}")
     print("Type 'quit' to exit.")
     print("-" * 50)

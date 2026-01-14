@@ -1,5 +1,5 @@
 """
-NanoPrime v2.0 - Complete Integrated Model
+Elleci v2.0 - Complete Integrated Model
 
 Hybrid architecture combining:
 - BitNet 1.58b (ternary weights)
@@ -64,7 +64,7 @@ class SwiGLUFFN(nn.Module):
     def forward(self, x):
         return self.w3(F.silu(self.w1(x)) * self.w2(x))
 
-class NanoPrimeBlock(nn.Module):
+class ElleciBlock(nn.Module):
     """
     Single transformer block with hybrid Mamba/MLA attention.
     
@@ -115,9 +115,9 @@ class NanoPrimeBlock(nn.Module):
         return x
 
 
-class NanoPrime(nn.Module):
+class Elleci(nn.Module):
     """
-    Complete NanoPrime model with adaptive routing.
+    Complete Elleci model with adaptive routing.
     
     Architecture:
     - Input embedding
@@ -127,7 +127,7 @@ class NanoPrime(nn.Module):
     - Output head
     
     Args:
-        config: NanoPrimeConfig
+        config: ElleciConfig
     """
     def __init__(self, config):
         super().__init__()
@@ -143,11 +143,11 @@ class NanoPrime(nn.Module):
             
             # Fast path: 2 lightweight blocks
             self.fast_blocks = nn.ModuleList([
-                NanoPrimeBlock(config, use_mamba=False) for _ in range(2)
+                ElleciBlock(config, use_mamba=False) for _ in range(2)
             ])
             
             # Slow path: Single block for thinking loop
-            self.slow_block = NanoPrimeBlock(config, use_mamba=True)
+            self.slow_block = ElleciBlock(config, use_mamba=True)
             self.thinking_loop = ThinkingLoop(config.thinking, self.slow_block)
         else:
             self.router = None
@@ -157,7 +157,7 @@ class NanoPrime(nn.Module):
         
         # Main blocks (shared)
         self.blocks = nn.ModuleList([
-            NanoPrimeBlock(config, use_mamba=(i % 2 == 0))  # Alternate Mamba/MLA
+            ElleciBlock(config, use_mamba=(i % 2 == 0))  # Alternate Mamba/MLA
             for i in range(config.n_layers)
         ])
         
@@ -343,25 +343,25 @@ class NanoPrime(nn.Module):
 
 
 # Export
-__all__ = ['NanoPrime', 'NanoPrimeBlock']
+__all__ = ['Elleci', 'ElleciBlock']
 
 
 if __name__ == "__main__":
     # Self-test
-    print("NanoPrime Model Self-Test")
+    print("Elleci Model Self-Test")
     print("=" * 60)
     
     import sys
     sys.path.insert(0, '..')
-    from config import NanoPrimeConfig
+    from config import ElleciConfig
     
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     config.n_layers = 4  # Smaller for testing
     config.max_seq_len = 64
     
     print(f"Config: {config.n_layers} layers, d_model={config.d_model}")
     
-    model = NanoPrime(config)
+    model = Elleci(config)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"✓ Model created: {total_params/1e6:.1f}M parameters")
     
@@ -385,4 +385,4 @@ if __name__ == "__main__":
     print(f"✓ Gradient flow: token_emb grad norm = {model.token_emb.weight.grad.norm().item():.4f}")
     
     print("\n✅ All tests passed!")
-    print("\n🎉 NanoPrime v2.0 architecture complete!")
+    print("\n🎉 Elleci v2.0 architecture complete!")

@@ -63,11 +63,11 @@ print("\n3. 🧠 MODEL + MAMBA-2 CHECK")
 print("-" * 50)
 try:
     sys.path.insert(0, '.')
-    from src.config import NanoPrimeConfig
-    from src.model import NanoPrime
+    from src.config import ElleciConfig
+    from src.model import Elleci
     from src.modules.mamba2 import Mamba2BlockFast
     
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     config.vocab_size = len(tokenizer) if tokenizer else 32000
     config.mamba.use_mamba2 = True
     
@@ -78,7 +78,7 @@ try:
     print(f"   ✅ Mamba chunk_size: {config.mamba.chunk_size}")
     
     # Create model
-    model = NanoPrime(config)
+    model = Elleci(config)
     params = sum(p.numel() for p in model.parameters())
     print(f"   ✅ Model: {params/1e6:.1f}M params")
     
@@ -243,7 +243,7 @@ try:
     if torch.cuda.is_available():
         torch.cuda.synchronize()
     
-    config = NanoPrimeConfig()
+    config = ElleciConfig()
     # CRITICAL: Set vocab_size BEFORE creating model
     actual_vocab_size = len(tokenizer) if tokenizer else 32043
     config.vocab_size = actual_vocab_size
@@ -251,7 +251,7 @@ try:
     
     print(f"   📊 Using vocab_size={config.vocab_size}")
     
-    model = NanoPrime(config).cuda()
+    model = Elleci(config).cuda()
     model.train()
     model.gradient_checkpointing_enable()
     

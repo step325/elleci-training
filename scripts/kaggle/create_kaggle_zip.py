@@ -3,7 +3,7 @@ import zipfile
 import os
 import sys
 
-def create_clean_zip(output_filename="NanoPrime_Kaggle_Clean.zip"):
+def create_clean_zip(output_filename="Elleci_Kaggle_Clean.zip"):
     # List of files and directories to include
     include_paths = [
         "src",

@@ -42,8 +42,8 @@ from tqdm import tqdm
 # Add root to path
 sys.path.append(os.getcwd())
 
-from src.config import NanoPrimeConfig
-from src.model import NanoPrime
+from src.config import ElleciConfig
+from src.model import Elleci
 from data.chimera_dataset import ChimeraDataset
 from scripts.benchmark_chimera import ChimeraEvaluator
 
@@ -178,7 +178,7 @@ def train():
     else:
         print(f"🏗️  Model: {d_model}d x {n_layers}L (Target ~1.5B)")
 
-    config = NanoPrimeConfig(
+    config = ElleciConfig(
         vocab_size=rounded_vocab,
         max_seq_len=1024,
         d_model=d_model,
@@ -199,7 +199,7 @@ def train():
     
     print(f"🏗️  Model: {config.d_model}d x {config.n_layers}L (Target ~1.5B)")
     
-    model = NanoPrime(config).to(config.device)
+    model = Elleci(config).to(config.device)
     
     # Compile
     if args.compile and hasattr(torch, "compile") and config.device == "cuda":
