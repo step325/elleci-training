@@ -26,10 +26,11 @@ from modules.router import AdaptiveRouter
 from modules.thinking_loop import ThinkingLoop
 
 # Liger Kernel for fused operations (memory + speed optimization)
+# NOTE: Fused CE disabled due to Triton bug with vocab 32128 + bf16
 try:
     from liger_kernel.transformers import LigerFusedLinearCrossEntropyLoss
     LIGER_AVAILABLE = True
-    print("🐯 Liger Kernel available (Fused CE ENABLED - saves ~30% VRAM)")
+    print("🐯 Liger Kernel available (fused CE disabled for stability)")
 except ImportError:
     LIGER_AVAILABLE = False
 
@@ -236,17 +237,13 @@ class NanoPrime(nn.Module):
         loss = None
         if targets is not None:
             if LIGER_AVAILABLE and self.training:
-                # 🐯 Liger Fused CE: ~30-40% VRAM savings!
-                # Computes loss without materializing full logits tensor
-                liger_loss_fn = LigerFusedLinearCrossEntropyLoss(
+                # � DISABILITIAMO SOLO IL FUSED CE (bug Triton)
+                logits = self.lm_head(x)
+                main_loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)),
+                    targets.view(-1),
                     ignore_index=-100,
                     label_smoothing=0.1  # Prevents overconfidence
-                )
-                # Fused: x @ lm_head.weight + CE in one kernel
-                main_loss = liger_loss_fn(
-                    x.view(-1, x.size(-1)),  # [batch*seq, d_model]
-                    self.lm_head.weight,      # [vocab, d_model]
-                    targets.view(-1)          # [batch*seq]
                 )
                 logits = None  # Not computed in fused mode
             else:
