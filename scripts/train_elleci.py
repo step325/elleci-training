@@ -148,8 +148,8 @@ def create_lerac_param_groups(model, base_lr=1.5e-3, warmup_ratio=5.0, weight_de
             return False
         return True
     
-    # Embeddings: base LR, NO weight decay
-    emb_params = list(model.token_emb.parameters()) + list(model.pos_emb.parameters())
+    # Embeddings: base LR, NO weight decay (RoPE has no learnable params)
+    emb_params = list(model.token_emb.parameters())
     if emb_params:
         param_groups.append({
             'params': emb_params, 
