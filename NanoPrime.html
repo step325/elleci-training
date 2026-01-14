@@ -434,10 +434,10 @@
 
     <div class="container">
         <header>
-            <div style="font-family: 'JetBrains Mono'; color: var(--text-secondary); font-size: 0.9rem;">NANOPRIME V2
+            <div style="font-family: 'JetBrains Mono'; color: var(--text-secondary); font-size: 0.9rem;">ELLECI V1 (NanoPrime V3)
             </div>
             <h1>Training & Architecture</h1>
-            <div style="color: var(--text-secondary);">Interactive Manual</div>
+            <div style="color: var(--text-secondary);">1.35B Params | 2048d × 24L | RoPE 128k Context</div>
         </header>
 
         <div class="tabs">
@@ -471,12 +471,11 @@
                 <div class="flow-step">
                     <div class="flow-icon">🔢</div>
                     <div class="flow-content">
-                        <h3>2. Tokenizer (GPT-2 BPE)</h3>
+                        <h3>2. Tokenizer (Elleci Chimera v2)</h3>
                         <div class="code-box">Token IDs: [15496, 11, 703, 257, 345, 30]</div>
-                        <p>Utilizza <strong>Byte-Pair Encoding (BPE)</strong>. Il testo viene prima scomposto in byte e
-                            poi raggruppato nei token più frequenti.</p>
+                        <p>Tokenizer custom italiano/inglese con <strong>32,128 token</strong>.</p>
                         <div class="sub-step">
-                            <strong>Vocabolario:</strong> 50,257 token unici.
+                            <strong>Vocabolario:</strong> 32,128 token (ottimizzato bilingue).
                         </div>
                         <div class="sub-step">
                             <strong>Mapping:</strong> "Ciao" → <code>15496</code>, "," → <code>11</code>.
@@ -490,15 +489,15 @@
                 <div class="flow-step">
                     <div class="flow-icon">🧩</div>
                     <div class="flow-content">
-                        <h3>3. Embedding Layer</h3>
-                        <div class="code-box">Tensor Shape: [1, 6, 768]</div>
-                        <p>Ogni token ID viene trasformato in un vettore denso a 768 dimensioni (d_model).</p>
+                        <h3>3. Token Embedding + RoPE</h3>
+                        <div class="code-box">Tensor Shape: [1, 6, 2048]</div>
+                        <p>Ogni token ID viene trasformato in un vettore denso a 2048 dimensioni (d_model).</p>
                         <div class="math-block" style="margin-top: 10px; font-size: 0.8rem;">
-                            x = wte(tokens) + wpe(positions)
+                            x = token_emb(tokens)  // RoPE applicato nell'attention
                         </div>
                         <p style="font-size: 0.85rem; margin-top: 5px;">
-                            <strong>wte (Token Emb):</strong> Contiene il significato semantico.<br>
-                            <strong>wpe (Pos Emb):</strong> Introduce l'informazione sull'ordine (assoluto).
+                            <strong>Token Emb:</strong> Contiene il significato semantico.<br>
+                            <strong>RoPE (Rotary):</strong> Posizione relativa iniettata in Q/K (128k context!).
                         </p>
                     </div>
                 </div>
@@ -509,27 +508,24 @@
                 <div class="flow-step highlight-purple-border">
                     <div class="flow-icon">🧠</div>
                     <div class="flow-content" style="border-color: var(--accent-purple);">
-                        <h3 style="color: var(--accent-purple);">4. NanoPrime Backbone (6 Layer Ibridi)</h3>
-                        <p>Il tensore attraversa 6 blocchi alternati. Ogni blocco applica <strong>RMSNorm</strong> in
+                        <h3 style="color: var(--accent-purple);">4. Elleci Backbone (24 Layer Ibridi)</h3>
+                        <p>Il tensore attraversa 24 blocchi alternati. Ogni blocco applica <strong>LayerNorm</strong> in
                             pre-norm.</p>
 
                         <div class="sub-step" style="border-left-color: var(--accent-green);">
-                            <strong>Layer Impari (Mamba Block):</strong>
+                            <strong>Layer Dispari (Mamba-2 Block):</strong>
                             <br>1. <strong>Conv1d:</strong> Convoluzione causale locale (kernel=4) per catturare pattern
                             vicini.
-                            <br>2. <strong>SSM (Selective Scan):</strong> Il core di Mamba. Aggiorna lo stato
-                            <code>h_t</code> in base all'input.
-                            <br><code style="font-size: 0.75rem;">h_t = exp(ΔA)·h_{t-1} + ΔB·x_t</code> (Selettività
-                            dipendente dall'input).
+                            <br>2. <strong>SSD (State Space Duality):</strong> Algoritmo Mamba-2 ottimizzato.
+                            <br><code style="font-size: 0.75rem;">h_t = exp(ΔA)·h_{t-1} + ΔB·x_t</code>
                         </div>
 
                         <div class="sub-step" style="border-left-color: var(--accent-purple);">
-                            <strong>Layer Pari (MLA Block):</strong>
+                            <strong>Layer Pari (MLA Block + RoPE):</strong>
                             <br>1. <strong>KV Compression:</strong> Proietta Key/Value in uno spazio latente ridotto
-                            (Low-Rank).
-                            <br>2. <strong>RoPE:</strong> Applica Rotary Embeddings per la posizione relativa.
-                            <br>3. <strong>Attention:</strong> Calcola le relazioni tra tutti i token (Causal Masking
-                            attivo).
+                            (128 → 93% risparmio).
+                            <br>2. <strong>RoPE:</strong> Rotary Embeddings (base=100k → 128k context).
+                            <br>3. <strong>Attention:</strong> Flash Attention via SDPA (causal).
                         </div>
                     </div>
                 </div>
