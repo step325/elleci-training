@@ -59,6 +59,15 @@ Thumbs.db
 # Secrets
 .env
 *.key
+
+# Local Dev / Artifacts
+CLAUDE.md
+.dockerignore
+Dockerfile*
+docker-compose.yml
+=*
+src/modules/mamba_v1_backup.py
+
 # External Modules
 arxiv-mcp/
 web_chat/
