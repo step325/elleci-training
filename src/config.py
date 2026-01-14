@@ -86,6 +86,8 @@ class NanoPrimeConfig:
     
     # Architecture flags
     use_router: bool = False  # Default to False (Production v2 backbone)
+    ffn_type: str = "swiglu"  # Standard V2-A
+    norm_type: str = "rms"    # Standard V2-A
     
     # Training
     batch_size: int = 16
