@@ -40,6 +40,7 @@ env/
 # Training artifacts
 checkpoints/
 wandb/
+wandb-mcp/
 logs/
 *.pth
 *.pt

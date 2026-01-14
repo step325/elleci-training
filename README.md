@@ -1,77 +1,39 @@
-# Elleci V1 - Italian/English LLM
+# NanoPrime V2 (Elleci)
 
-A 1.5B parameter hybrid LLM using **Mamba-2 + MLA + BitNet** architecture.
+**A 1.5B parameter hybrid LLM designed for efficiency.**
 
-## Quick Start (Vast.ai / 4090)
+## Architecture (V2-A)
+NanoPrime V2 integrates three efficiency paradigms into a single hybrid backbone:
 
+| Component | Choice | Why? |
+|:----------|:-------|:-----|
+| **Core Backbone** | **Mamba-2 (SSD)** | Linear-time sequence modeling (infinite context potential). |
+| **Attention** | **MLA** (Multi-Head Latent Attention) | Compressed KV cache (RoPE based). |
+| **Weights** | **BitNet 1.58b** | Ternary weights for extreme memory efficiency. |
+| **FFN** | **SwiGLU** | Gated activation for better convergence (V2 Upgrade). |
+| **Norm** | **RMSNorm** | Faster and more stable than LayerNorm (V2 Upgrade). |
+
+## Experiment
+**Goal**: Validate the stability and performance of the V2 hybrid architecture on a mixed Italian/English corpus.
+
+- **Dataset**: Chimera (55% Italian Instructions / 45% English Cosmopedia).
+- **Size**: 1.5 Billion Parameters.
+- **Context**: 1024 tokens (Training), 128k supported (inference).
+- **Optimization**: LeRaC (Layer-wise Learning Rate), Adafactor.
+
+## Usage
+
+### Training
 ```bash
-# 1. Clone
-git clone https://github.com/YOUR_USERNAME/elleci-training.git
-cd elleci-training
+# Standard Training
+python scripts/train_elleci.py
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Train
-python -m scripts.train_elleci
+# Dry Run (Test hardware/throughput)
+python scripts/train_elleci.py --dry-run
 ```
 
-## Architecture
-
-| Component | Description |
-|-----------|-------------|
-| **Mamba-2 (SSD)** | State Space Model for long sequences |
-| **MLA** | Multi-head Latent Attention (KV compression) |
-| **BitNet 1.58b** | Ternary weights for efficiency |
-| **Adafactor** | Memory-efficient optimizer |
-
-## Configuration
-
-- **Model**: 2048d × 24L (~1.5B params)
-- **Vocab**: 32,128 tokens (Italian-focused)
-- **Batch**: 8 (effective 64 with grad accum)
-- **Precision**: bfloat16
-
-## Hardware Requirements
-
-| GPU | VRAM | Status |
-|-----|------|--------|
-| RTX 4090 | 24GB | ✅ Recommended |
-| RTX 4070 | 12GB | ⚠️ Reduce batch_size to 2 |
-| A100 | 40GB+ | ✅ Increase batch_size |
-
-## Training
-
+### Checks
 ```bash
-# Standard training (50k steps)
-python -m scripts.train_elleci
-
-# Dry run (test setup)
-python -m scripts.train_elleci --dry-run
-
-# With torch.compile (experimental)
-python -m scripts.train_elleci --compile
-
-# Without WandB logging
-python -m scripts.train_elleci --no-wandb
+# Pre-training validation
+python pre_training_check.py
 ```
-
-## Files
-
-```
-elleci-training/
-├── src/
-│   ├── model.py          # Main model
-│   ├── config.py         # Configuration
-│   └── modules/          # Mamba, MLA, BitNet, etc.
-├── scripts/
-│   └── train_elleci.py   # Training script
-├── data/
-│   └── elleci_dataset.py # Dataset loader
-├── tokenizer_elleci_v1/  # Tokenizer files
-└── requirements.txt
-```
-
-## License
-
-MIT
