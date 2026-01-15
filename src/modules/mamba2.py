@@ -19,6 +19,47 @@ from einops import rearrange, repeat
 import math
 
 
+@torch.jit.script
+def mamba_chunk_scan_jit(x, dt, A_log, B, C, state):
+    """
+    JIT-compiled kernel for Mamba2 chunk scanning.
+    Fuses the sequential loop into a single GPU kernel for speed.
+    (Optimized: Pre-allocates output tensor)
+    """
+    batch, cs, n_heads, head_dim = x.shape
+    
+    # Pre-allocate output tensor to avoid dynamic list growth
+    outputs = torch.empty(batch, cs, n_heads, head_dim, 
+                          device=x.device, dtype=x.dtype)
+    
+    # Pre-compute A from A_log
+    A = -torch.exp(A_log.float()) # [n_heads]
+    A = A.view(1, n_heads, 1) # [1, H, 1]
+    
+    for t in range(cs):
+        # 1. Compute Step Decay locally
+        dt_t = dt[:, t] # [B, H, D]
+        step_decay = torch.exp(A * dt_t) # [B, H, D]
+        
+        # 2. Decay state
+        state = state * step_decay.unsqueeze(-1) # [B, H, D, 1]
+        
+        # 3. Add input
+        x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
+        dt_t_exp = dt_t.unsqueeze(-1)     # [B, H, D, 1] 
+        B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+        
+        state = state + (dt_t_exp * x_t * B_t)
+        
+        # 4. Compute output
+        C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+        
+        # Write directly to pre-allocated buffer
+        outputs[:, t] = (state * C_t).sum(dim=-1) # [B, H, D]
+        
+    return outputs, state
+
+
 class Mamba2Block(nn.Module):
     """
     Mamba-2 block with SSD (State Space Duality) mechanism.
@@ -329,50 +370,11 @@ class Mamba2BlockFast(Mamba2Block):
     
     def chunk_forward(self, x, dt, decay, B, C, state):
         """
-        Stable chunk processing using sequential formulation with CORRECT step-wise decay.
-        
-        Args:
-            x: [batch, cs, n_heads, head_dim]
-            dt: [batch, cs, n_heads, head_dim]
-            decay: [batch, cs, n_heads, head_dim] (CUMULATIVE decay - IGNORED IN LOOP)
-            B: [batch, cs, d_state]
-            C: [batch, cs, d_state]
-            state: [batch, n_heads, head_dim, d_state]
+        Optimized chunk processing using JIT-compiled kernel.
         """
-        batch, cs, n_heads, head_dim = x.shape
-        outputs = []
-        
-        # Recover A parameter for step-wise decay calculation
-        # A_log is [n_heads]
-        A = -torch.exp(self.A_log.float()) # [n_heads]
-        
-        for t in range(cs):
-            # 1. Compute Step Decay locally
-            dt_t = dt[:, t] # [B, H, D]
-            
-            # decay_t = exp(A * dt)
-            # A: [H] -> [1, H, 1] broadcasting to [B, H, D]
-            step_decay = torch.exp(A.view(1, n_heads, 1) * dt_t) # [B, H, D]
-            
-            # 2. Decay state
-            state = state * step_decay.unsqueeze(-1) # [B, H, D, 1]
-            
-            # 3. Add input
-            x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
-            # dt_t is already [B, H, D], need [B, H, D, 1]
-            dt_t_exp = dt_t.unsqueeze(-1)
-            B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-            
-            # state += dt * x * B
-            state = state + (dt_t_exp * x_t * B_t)
-            
-            # 4. Compute output
-            C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-            y_t = (state * C_t).sum(dim=-1) # [B, H, D]
-            outputs.append(y_t)
-            
-        y = torch.stack(outputs, dim=1)
-        return y, state
+        # We ignore the 'decay' argument (cumulative) and let the JIT kernel
+        # recompute step-wise decay using self.A_log for correctness.
+        return mamba_chunk_scan_jit(x, dt, self.A_log, B, C, state)
         
         # Add previous state contribution
         state_expanded = state.unsqueeze(1)  # [batch, 1, h, d, d_state]
