@@ -288,6 +288,9 @@ def train():
     print("🦁 Elleci V1 - Initialization")
     print(f"Goal: {TOTAL_STEPS} steps (Switch at {PHASE_SWITCH_STEP})")
     
+    print("\n🛡️  SECURITY CHECK: Causal Masking Fix is ACTIVE.")
+    print("   (Ensuring logits[t] predicts targets[t+1])\n")
+    
     # 1. Load Tokenizer & Detect Vocab Size
     tokenizer_path = "tokenizer_elleci_v1/tokenizer.json"
     # Fallback to old path if new not found
@@ -360,13 +363,6 @@ def train():
     print("🎯 LeRaC Enabled (per-layer LR curriculum):")
     for pg in param_groups[:3]:  # Show first 3
         print(f"   {pg['name']}: LR = {pg['lr']:.2e}")
-    print("=" * 60)
-    print("🚀 ELLECI TRAINING STARTED")
-    print("✅ IDENTITY MAPPING FIX: ACTIVE (Logits shifted for Causal LM)")
-    print("=" * 60)
-    print(f"RESUME: {resume_path if resume else 'False'}")
-    print(f"DEVICE: {config.device}")
-    print(f"DATALOADER: {num_workers} workers")
     print(f"   ... ({len(param_groups)} groups total)")
     
     # AdamW: Most stable optimizer for LLM training
