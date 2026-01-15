@@ -419,10 +419,17 @@ def train():
         optimizer = torch.optim.AdamW(param_groups, weight_decay=0.1)
         
     scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, 
+        optimizer,
         lr_lambda=lambda step: get_lr_schedule(step, TOTAL_STEPS, WARMUP_STEPS)
     )
-    
+
+    # Advance scheduler to correct step when resuming
+    if start_step > 0:
+        print(f"⏩ Advancing scheduler to step {start_step}...")
+        for _ in range(start_step):
+            scheduler.step()
+        print(f"✅ Scheduler advanced. Current LR: {scheduler.get_last_lr()[0]:.2e}")
+
     # Use bfloat16 if available (CRITICAL for BitNet/Mamba stability)
     use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
     dtype = torch.bfloat16 if use_bf16 else torch.float16
