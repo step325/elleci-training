@@ -79,3 +79,7 @@ verify_modules.py
 check_mamba_init.py
 check_tokenizer.py
 debug_data.py
+SCAN_MATH_VERIFICATION.md
+ARCHITECTURE_VERIFICATION.md
+scripts/test_checkpoint.py
+scripts/test_language_quality.py

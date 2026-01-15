@@ -126,6 +126,20 @@ def get_current_seq_len(step, total_steps):
             return seq_len
     return SEQ_CURRICULUM[-1][1]
 
+def get_batch_size_for_seq_len(seq_len):
+    """Scale batch_size inversely with seq_len to maintain constant memory."""
+    if seq_len <= 512:
+        return 4
+    else:
+        return 2  # Halved to compensate for doubled seq_len
+
+def get_grad_accum_for_seq_len(seq_len):
+    """Scale grad_accum to maintain effective batch size = 64."""
+    if seq_len <= 512:
+        return 16
+    else:
+        return 32  # Doubled to compensate for halved batch_size
+
 def create_lerac_param_groups(model, base_lr=1.5e-3, warmup_ratio=5.0, weight_decay=0.1):
     """
     LeRaC: Learning Rate Curriculum with SELECTIVE WEIGHT DECAY
@@ -218,6 +232,8 @@ def parse_args():
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (small model, few steps)")
     parser.add_argument("--compile", action="store_true", help="Enable torch.compile (experimental)")
     parser.add_argument("--no-wandb", action="store_true", help="Disable WandB logging")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
+    parser.add_argument("--start-step", type=int, default=None, help="Step to resume from (auto-detected from checkpoint name if not specified)")
     return parser.parse_args()
 
 def get_lr_schedule(step, total_steps, warmup_steps, cooldown_ratio=0.2):
@@ -344,7 +360,35 @@ def train():
             print("⚠️ Warning: <10GB VRAM might struggle with 1.5B model training contexts.")
     
     model = Elleci(config).to(config.device)
-    
+
+    # Resume from checkpoint if specified
+    start_step = 0
+    if args.resume:
+        if os.path.exists(args.resume):
+            print(f"📂 Loading checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=config.device)
+            model.load_state_dict(checkpoint)
+
+            # Auto-detect step from checkpoint name if not specified
+            if args.start_step is not None:
+                start_step = args.start_step
+            else:
+                # Try to extract step from filename (e.g., elleci_step_40000.pth)
+                import re
+                match = re.search(r'step_(\d+)', args.resume)
+                if match:
+                    start_step = int(match.group(1))
+                    print(f"📍 Auto-detected start step: {start_step}")
+                else:
+                    print("⚠️ Could not auto-detect step from checkpoint name. Starting from 0.")
+
+            print(f"✅ Resuming from step {start_step}")
+            del checkpoint
+            torch.cuda.empty_cache()
+        else:
+            print(f"❌ Checkpoint not found: {args.resume}")
+            sys.exit(1)
+
     # Compile
     if args.compile and hasattr(torch, "compile") and config.device == "cuda":
         try:
@@ -420,8 +464,6 @@ def train():
     # 5. Training Loop
     os.makedirs("checkpoints", exist_ok=True)
     
-    # Initialize Phase 1
-    current_phase = 1
     num_workers = 0  # Buffered dataset is fast, no need for multiprocessing overhead
     
     # Clear CUDA cache before training
@@ -434,18 +476,23 @@ def train():
     print("📉 Gradient Checkpointing ENABLED (memory saving)")
     
     # Sequence Length Curriculum: start short, scale up
-    current_seq_len = get_current_seq_len(0, TOTAL_STEPS)
-    print(f"📐 Curriculum: Starting with seq_len={current_seq_len} (will scale to 1024)")
-    
-    dataset = EllediDataset(tokenizer, phase=1, max_length=current_seq_len, batch_size=config.batch_size)
+    current_seq_len = get_current_seq_len(start_step, TOTAL_STEPS)
+    current_batch_size = get_batch_size_for_seq_len(current_seq_len)
+    current_grad_accum = get_grad_accum_for_seq_len(current_seq_len)
+    print(f"📐 Curriculum: Starting with seq_len={current_seq_len}, batch_size={current_batch_size}, grad_accum={current_grad_accum}")
+
+    # Determine initial phase based on start_step
+    current_phase = 2 if start_step >= PHASE_SWITCH_STEP else 1
+
+    dataset = EllediDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=current_batch_size)
     dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
     data_iter = iter(dataloader)
     
     model.train()
     optimizer.zero_grad(set_to_none=True)  # Free gradient memory immediately
     
-    print("\n🔥 Starting Training...")
-    pbar = tqdm(range(TOTAL_STEPS))
+    print(f"\n🔥 Starting Training from step {start_step}...")
+    pbar = tqdm(range(start_step, TOTAL_STEPS), initial=start_step, total=TOTAL_STEPS)
     
     accum_loss = 0
     
@@ -453,20 +500,26 @@ def train():
         # Curriculum Sequence Length Check
         new_seq_len = get_current_seq_len(step, TOTAL_STEPS)
         if new_seq_len != current_seq_len:
-            print(f"\n📐 CURRICULUM: Increasing seq_len {current_seq_len} → {new_seq_len}")
+            # Clear memory before transition
+            gc.collect()
+            torch.cuda.empty_cache()
+
             current_seq_len = new_seq_len
-            dataset = EllediDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=config.batch_size)
+            current_batch_size = get_batch_size_for_seq_len(current_seq_len)
+            current_grad_accum = get_grad_accum_for_seq_len(current_seq_len)
+            print(f"\n📐 CURRICULUM: seq_len={current_seq_len}, batch_size={current_batch_size}, grad_accum={current_grad_accum}")
+
+            dataset = EllediDataset(tokenizer, phase=current_phase, max_length=current_seq_len, batch_size=current_batch_size)
             dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
             data_iter = iter(dataloader)
         
         # Phase Switch Check
-        if step == PHASE_SWITCH_STEP:
+        if step == PHASE_SWITCH_STEP and current_phase != 2:
             print("\n🔄 SWITCHING TO PHASE 2 (Alignment)...")
             current_phase = 2
-            dataset = EllediDataset(tokenizer, phase=2, max_length=current_seq_len, batch_size=config.batch_size)
+            dataset = EllediDataset(tokenizer, phase=2, max_length=current_seq_len, batch_size=current_batch_size)
             dataloader = DataLoader(dataset, batch_size=None, num_workers=num_workers, prefetch_factor=None if num_workers==0 else 2, pin_memory=True)
             data_iter = iter(dataloader)
-            # Update scheduler/optimizer? No, continue decay
         
         # SWA Activation Check (lazy init to save VRAM)
         if step == SWA_START and not swa_active:
@@ -506,23 +559,23 @@ def train():
             loss.backward()
         else:
             scaler.scale(loss).backward()
-        accum_loss += loss.item() / GRAD_ACCUM_STEPS
+        accum_loss += loss.item() / current_grad_accum
 
         # VRAM breakdown after first forward pass
-        if step == 0:
+        if step == start_step:
             print_vram_breakdown(
                 model=model,
-                batch_size=config.batch_size,
+                batch_size=current_batch_size,
                 seq_len=current_seq_len,
                 d_model=d_model,
                 n_layers=n_layers
             )
 
-        if (step + 1) % GRAD_ACCUM_STEPS == 0:
-            # Scale gradients by GRAD_ACCUM_STEPS (since we didn't scale loss before backward)
+        if (step + 1) % current_grad_accum == 0:
+            # Scale gradients by current_grad_accum (since we didn't scale loss before backward)
             for param in model.parameters():
                 if param.grad is not None:
-                    param.grad.data.div_(GRAD_ACCUM_STEPS)
+                    param.grad.data.div_(current_grad_accum)
             
             # Gradient Clipping (Critical for BitNet)
             if use_bf16:
