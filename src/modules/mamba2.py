@@ -19,50 +19,6 @@ from einops import rearrange, repeat
 import math
 
 
-@torch.jit.script
-def mamba_chunk_scan_jit(x, dt, A_log, B, C, state):
-    """
-    JIT-compiled kernel for Mamba2 chunk scanning.
-    Fuses the sequential loop into a single GPU kernel for speed.
-    (Optimized: Pre-allocates output tensor)
-    """
-    batch, cs, n_heads, head_dim = x.shape
-    
-    # Clone state to avoid in-place modification issues with Gradient Checkpointing
-    state = state.clone()
-    
-    # Pre-allocate output tensor to avoid dynamic list growth
-    outputs = torch.empty(batch, cs, n_heads, head_dim, 
-                          device=x.device, dtype=x.dtype)
-    
-    # Pre-compute A from A_log
-    A = -torch.exp(A_log.float()) # [n_heads]
-    A = A.view(1, n_heads, 1) # [1, H, 1]
-    
-    for t in range(cs):
-        # 1. Compute Step Decay locally
-        dt_t = dt[:, t] # [B, H, D]
-        step_decay = torch.exp(A * dt_t) # [B, H, D]
-        
-        # 2. Decay state
-        state = state * step_decay.unsqueeze(-1) # [B, H, D, 1]
-        
-        # 3. Add input
-        x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
-        dt_t_exp = dt_t.unsqueeze(-1)     # [B, H, D, 1] 
-        B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-        
-        state = state + (dt_t_exp * x_t * B_t)
-        
-        # 4. Compute output
-        C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-        
-        # Write directly to pre-allocated buffer
-        outputs[:, t] = (state * C_t).sum(dim=-1) # [B, H, D]
-        
-    return outputs, state
-
-
 class Mamba2Block(nn.Module):
     """
     Mamba-2 block with SSD (State Space Duality) mechanism.
@@ -373,28 +329,48 @@ class Mamba2BlockFast(Mamba2Block):
     
     def chunk_forward(self, x, dt, decay, B, C, state):
         """
-        Optimized chunk processing using JIT-compiled kernel.
+        Stable chunk processing using sequential formulation.
+        Optimized with tensor pre-allocation to be torch.compile() friendly.
         """
-        # We ignore the 'decay' argument (cumulative) and let the JIT kernel
-        # recompute step-wise decay using self.A_log for correctness.
-        return mamba_chunk_scan_jit(x, dt, self.A_log, B, C, state)
+        batch, cs, n_heads, head_dim = x.shape
         
-        # Add previous state contribution
-        state_expanded = state.unsqueeze(1)  # [batch, 1, h, d, d_state]
-        initial_decay = decay[:, 0:1].unsqueeze(-1)  # First decay
-        full_cum_decay = cum_decay.unsqueeze(-1)
+        # Pre-allocate output tensor (Removes graph breaks for torch.compile)
+        outputs = torch.empty(batch, cs, n_heads, head_dim, 
+                              device=x.device, dtype=x.dtype)
         
-        state_contrib = state_expanded * full_cum_decay
-        state_full = state_new + state_contrib
+        # Recover A parameter for step-wise decay calculation
+        # A_log is [n_heads]
+        A = -torch.exp(self.A_log.float()) # [n_heads]
         
-        # Output: y = sum(state * C)
-        C_exp = C.unsqueeze(2).unsqueeze(2)  # [batch, cs, 1, 1, d_state]
-        y = (state_full * C_exp).sum(dim=-1)  # [batch, cs, h, d]
+        for t in range(cs):
+            # 1. Compute Step Decay locally
+            dt_t = dt[:, t] # [B, H, D]
+            
+            # decay_t = exp(A * dt)
+            # A: [H] -> [1, H, 1] broadcasting to [B, H, D]
+            step_decay = torch.exp(A.view(1, n_heads, 1) * dt_t) # [B, H, D]
+            
+            # 2. Decay state
+            state = state * step_decay.unsqueeze(-1) # [B, H, D, 1]
+            
+            # 3. Add input
+            x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
+            # dt_t is already [B, H, D], need [B, H, D, 1]
+            dt_t_exp = dt_t.unsqueeze(-1)
+            B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+            
+            # state += dt * x * B
+            state = state + (dt_t_exp * x_t * B_t)
+            
+            # 4. Compute output
+            C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+            
+            # Write directly to pre-allocated buffer
+            outputs[:, t] = (state * C_t).sum(dim=-1) # [B, H, D]
+            
+        return outputs, state
         
-        # Update state for next chunk
-        new_state = state_full[:, -1]  # [batch, h, d, d_state]
-        
-        return y, new_state
+
 
 
 # Compatibility wrapper to use as drop-in replacement
