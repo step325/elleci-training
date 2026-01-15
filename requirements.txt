@@ -21,3 +21,4 @@ tqdm>=4.65.0
 einops>=0.7.0
 causal-conv1d>=1.0.0
 mamba-ssm>=1.0.0
+accelerated-scan>=0.1.0

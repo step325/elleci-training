@@ -17,6 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
 import math
+from accelerated_scan.scalar import scan
 
 
 class Mamba2Block(nn.Module):
@@ -329,46 +330,87 @@ class Mamba2BlockFast(Mamba2Block):
     
     def chunk_forward(self, x, dt, decay, B, C, state):
         """
-        Stable chunk processing using sequential formulation.
-        Optimized with tensor pre-allocation to be torch.compile() friendly.
+        Parallel scan implementation using accelerated-scan.
+
+        Formula: h_t = decay_t * h_{t-1} + input_t
+        where decay_t = exp(A * dt_t) and input_t = dt_t * x_t * B_t
+
+        Args:
+            x: [batch, chunk_size, n_heads, head_dim]
+            dt: [batch, chunk_size, n_heads, head_dim]
+            decay: [batch, chunk_size, n_heads, head_dim] - UNUSED (recomputed)
+            B: [batch, chunk_size, d_state]
+            C: [batch, chunk_size, d_state]
+            state: [batch, n_heads, head_dim, d_state] - initial state
+
+        Returns:
+            y: [batch, chunk_size, n_heads, head_dim]
+            new_state: [batch, n_heads, head_dim, d_state]
         """
         batch, cs, n_heads, head_dim = x.shape
-        
-        # Pre-allocate output tensor (Removes graph breaks for torch.compile)
-        outputs = torch.empty(batch, cs, n_heads, head_dim, 
-                              device=x.device, dtype=x.dtype)
-        
-        # Recover A parameter for step-wise decay calculation
-        # A_log is [n_heads]
-        A = -torch.exp(self.A_log.float()) # [n_heads]
-        
-        for t in range(cs):
-            # 1. Compute Step Decay locally
-            dt_t = dt[:, t] # [B, H, D]
-            
-            # decay_t = exp(A * dt)
-            # A: [H] -> [1, H, 1] broadcasting to [B, H, D]
-            step_decay = torch.exp(A.view(1, n_heads, 1) * dt_t) # [B, H, D]
-            
-            # 2. Decay state
-            state = state * step_decay.unsqueeze(-1) # [B, H, D, 1]
-            
-            # 3. Add input
-            x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
-            # dt_t is already [B, H, D], need [B, H, D, 1]
-            dt_t_exp = dt_t.unsqueeze(-1)
-            B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-            
-            # state += dt * x * B
-            state = state + (dt_t_exp * x_t * B_t)
-            
-            # 4. Compute output
-            C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-            
-            # Write directly to pre-allocated buffer
-            outputs[:, t] = (state * C_t).sum(dim=-1) # [B, H, D]
-            
-        return outputs, state
+        d_state = B.shape[-1]
+
+        # 1. Compute step decay: exp(A * dt)
+        A = -torch.exp(self.A_log.float())  # [n_heads]
+        decay_step = torch.exp(A.view(1, 1, n_heads, 1) * dt)  # [B, cs, H, D]
+
+        # 2. Scale input by dt
+        x_scaled = dt * x  # [B, cs, H, D]
+
+        # 3. Expand B to compute input values: x_scaled * B
+        # B: [B, cs, S] -> [B, cs, H, D, S]
+        B_exp = B.unsqueeze(2).unsqueeze(2).expand(-1, -1, n_heads, head_dim, -1)
+        # x_scaled: [B, cs, H, D] -> [B, cs, H, D, 1]
+        x_exp = x_scaled.unsqueeze(-1)
+        # values: [B, cs, H, D, S]
+        values = x_exp * B_exp
+
+        # 4. Reshape for scan: [batch*heads*head_dim, d_state, chunk_size]
+        # scan expects: (forget, inputs) with shape [N, C, T]
+        # where N=batch dimension, C=channels, T=time
+        N = batch * n_heads * head_dim
+
+        # Reshape decay_step: [B, cs, H, D] -> [N, 1, cs] -> [N, S, cs]
+        forget = decay_step.permute(0, 2, 3, 1).reshape(N, 1, cs)
+        forget = forget.expand(N, d_state, cs).contiguous()
+
+        # Reshape values: [B, cs, H, D, S] -> [N, S, cs]
+        inputs = values.permute(0, 2, 3, 4, 1).reshape(N, d_state, cs).contiguous()
+
+        # Prepend initial state to handle non-zero initial conditions
+        # state: [B, H, D, S] -> [N, S, 1]
+        state_flat = state.reshape(N, d_state, 1).contiguous()
+
+        # Prepend state: forget becomes [N, S, cs+1], inputs becomes [N, S, cs+1]
+        # For timestep 0: forget=1.0 (no decay), inputs=state (to inject initial state)
+        forget_with_init = torch.cat([
+            torch.ones_like(state_flat),  # forget_0 = 1.0
+            forget
+        ], dim=2)  # [N, S, cs+1]
+
+        inputs_with_init = torch.cat([
+            state_flat,  # inputs_0 = initial_state
+            inputs
+        ], dim=2)  # [N, S, cs+1]
+
+        # 5. Call parallel scan: x_t = forget_t * x_{t-1} + inputs_t
+        states_with_init = scan(forget_with_init, inputs_with_init)  # [N, S, cs+1]
+
+        # Remove the prepended initial state timestep
+        states = states_with_init[:, :, 1:]  # [N, S, cs]
+
+        # 6. Reshape output states: [N, S, cs] -> [B, cs, H, D, S]
+        states = states.view(batch, n_heads, head_dim, d_state, cs)
+        states = states.permute(0, 4, 1, 2, 3)  # [B, cs, H, D, S]
+
+        # 7. Compute output y = sum(state * C)
+        C_exp = C.unsqueeze(2).unsqueeze(3)  # [B, cs, 1, 1, S]
+        y = (states * C_exp).sum(dim=-1)  # [B, cs, H, D]
+
+        # 8. Extract new state (last timestep)
+        new_state = states[:, -1]  # [B, H, D, S]
+
+        return y, new_state
         
 
 
