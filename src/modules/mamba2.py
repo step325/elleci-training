@@ -329,45 +329,32 @@ class Mamba2BlockFast(Mamba2Block):
     
     def chunk_forward(self, x, dt, decay, B, C, state):
         """
-        Vectorized chunk processing.
+        Stable chunk processing using sequential formulation.
+        Prevents NaN caused by 'division by vanishing decay' in the cumulative sum formula.
         """
         batch, cs, n_heads, head_dim = x.shape
+        outputs = []
         
-        # Compute within-chunk state updates using cumulative products
-        # This is an approximation that works well for small chunks
-        
-        # Cumulative decay from start of chunk
-        # decay: [batch, cs, h, d]
-        log_decay = torch.log(decay.clamp(min=1e-8))
-        cumsum_log_decay = log_decay.cumsum(dim=1)
-        cum_decay = torch.exp(cumsum_log_decay)  # [batch, cs, h, d]
-        
-        # Relative decay for each pair (i, j) where j <= i
-        # For simplicity, use diagonal approximation
-        
-        # Input contribution: dt * x * B
-        # x: [batch, cs, h, d]
-        # B: [batch, cs, d_state]
-        x_contrib = dt.unsqueeze(-1) * x.unsqueeze(-1) * B.unsqueeze(2).unsqueeze(2)
-        # x_contrib: [batch, cs, h, d, d_state]
-        
-        # Apply cumulative decay (approximate causal masking)
-        # We need to compute: Sum_{k=0}^t (u_k * Prod_{m=k+1}^t d_m)
-        # = Prod_{0}^t d_m * Sum_{k=0}^t (u_k / Prod_{0}^k d_m)
-        # = cum_decay * cumsum( x_contrib / cum_decay )
-        
-        # 1. Invert cumulative decay
-        # Add epsilon to avoid division by zero
-        inv_cum_decay = 1.0 / cum_decay.unsqueeze(-1).clamp(min=1e-20)
-        
-        # 2. X term scaled by inverse decay
-        x_scaled = x_contrib * inv_cum_decay
-        
-        # 3. Cumulative sum
-        cumsum_scaled = x_scaled.cumsum(dim=1)
-        
-        # 4. Multiply by current cumulative decay
-        state_new = cumsum_scaled * cum_decay.unsqueeze(-1)
+        for t in range(cs):
+            # 1. Decay state
+            decay_t = decay[:, t].unsqueeze(-1) # [B, H, D, 1]
+            state = state * decay_t
+            
+            # 2. Add input
+            x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
+            dt_t = dt[:, t].unsqueeze(-1)     # [B, H, D, 1]
+            B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+            
+            # state += dt * x * B
+            state = state + (dt_t * x_t * B_t)
+            
+            # 3. Compute output
+            C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+            y_t = (state * C_t).sum(dim=-1) # [B, H, D]
+            outputs.append(y_t)
+            
+        y = torch.stack(outputs, dim=1)
+        return y, state
         
         # Add previous state contribution
         state_expanded = state.unsqueeze(1)  # [batch, 1, h, d, d_state]
