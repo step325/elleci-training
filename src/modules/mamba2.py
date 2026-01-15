@@ -329,26 +329,44 @@ class Mamba2BlockFast(Mamba2Block):
     
     def chunk_forward(self, x, dt, decay, B, C, state):
         """
-        Stable chunk processing using sequential formulation.
-        Prevents NaN caused by 'division by vanishing decay' in the cumulative sum formula.
+        Stable chunk processing using sequential formulation with CORRECT step-wise decay.
+        
+        Args:
+            x: [batch, cs, n_heads, head_dim]
+            dt: [batch, cs, n_heads, head_dim]
+            decay: [batch, cs, n_heads, head_dim] (CUMULATIVE decay - IGNORED IN LOOP)
+            B: [batch, cs, d_state]
+            C: [batch, cs, d_state]
+            state: [batch, n_heads, head_dim, d_state]
         """
         batch, cs, n_heads, head_dim = x.shape
         outputs = []
         
+        # Recover A parameter for step-wise decay calculation
+        # A_log is [n_heads]
+        A = -torch.exp(self.A_log.float()) # [n_heads]
+        
         for t in range(cs):
-            # 1. Decay state
-            decay_t = decay[:, t].unsqueeze(-1) # [B, H, D, 1]
-            state = state * decay_t
+            # 1. Compute Step Decay locally
+            dt_t = dt[:, t] # [B, H, D]
             
-            # 2. Add input
+            # decay_t = exp(A * dt)
+            # A: [H] -> [1, H, 1] broadcasting to [B, H, D]
+            step_decay = torch.exp(A.view(1, n_heads, 1) * dt_t) # [B, H, D]
+            
+            # 2. Decay state
+            state = state * step_decay.unsqueeze(-1) # [B, H, D, 1]
+            
+            # 3. Add input
             x_t = x[:, t].unsqueeze(-1)       # [B, H, D, 1]
-            dt_t = dt[:, t].unsqueeze(-1)     # [B, H, D, 1]
+            # dt_t is already [B, H, D], need [B, H, D, 1]
+            dt_t_exp = dt_t.unsqueeze(-1)
             B_t = B[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
             
             # state += dt * x * B
-            state = state + (dt_t * x_t * B_t)
+            state = state + (dt_t_exp * x_t * B_t)
             
-            # 3. Compute output
+            # 4. Compute output
             C_t = C[:, t].unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
             y_t = (state * C_t).sum(dim=-1) # [B, H, D]
             outputs.append(y_t)
