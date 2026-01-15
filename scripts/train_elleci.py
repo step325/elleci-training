@@ -360,6 +360,13 @@ def train():
     print("🎯 LeRaC Enabled (per-layer LR curriculum):")
     for pg in param_groups[:3]:  # Show first 3
         print(f"   {pg['name']}: LR = {pg['lr']:.2e}")
+    print("=" * 60)
+    print("🚀 ELLECI TRAINING STARTED")
+    print("✅ IDENTITY MAPPING FIX: ACTIVE (Logits shifted for Causal LM)")
+    print("=" * 60)
+    print(f"RESUME: {resume_path if resume else 'False'}")
+    print(f"DEVICE: {config.device}")
+    print(f"DATALOADER: {num_workers} workers")
     print(f"   ... ({len(param_groups)} groups total)")
     
     # AdamW: Most stable optimizer for LLM training
