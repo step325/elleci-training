@@ -2,7 +2,10 @@
 
 Questa cartella contiene gli strumenti per generare e filtrare dati di alta qualità ("Textbook Quality") per Elleci.
 
-## 1. Synthetic Data Generation (Opzione A)
+### 1. Requirements
+```bash
+pip install google-genai tqdm
+```(Opzione A)
 L'obiettivo è generare dati che sembrano "libri di testo": chiari, didattici, strutturati.
 
 ### Workflow Proposto
