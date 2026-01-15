@@ -28,6 +28,9 @@ def mamba_chunk_scan_jit(x, dt, A_log, B, C, state):
     """
     batch, cs, n_heads, head_dim = x.shape
     
+    # Clone state to avoid in-place modification issues with Gradient Checkpointing
+    state = state.clone()
+    
     # Pre-allocate output tensor to avoid dynamic list growth
     outputs = torch.empty(batch, cs, n_heads, head_dim, 
                           device=x.device, dtype=x.dtype)
