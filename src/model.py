@@ -274,24 +274,38 @@ class Elleci(nn.Module):
         
         # Compute loss if targets provided
         loss = None
+        
+        # Always compute logits first (needed for both loss and inference)
+        logits = self.lm_head(x)
+        
         if targets is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = targets[..., 1:].contiguous()
+            
             if LIGER_AVAILABLE and self.training:
-                # � DISABILITIAMO SOLO IL FUSED CE (bug Triton)
-                logits = self.lm_head(x)
+                # LigerFusedLinearCrossEntropyLoss handles the linear layer too, 
+                # but here self.lm_head is already applied.
+                # If Liger just provides FusedCrossEntropy, we use that.
+                # Assuming standard F.cross_entropy equivalent for now to be safe or 
+                # if LigerFusedLinearCrossEntropyLoss requires raw features, we'd need to change more.
+                # Given the previous code just computed logits and passed to F.cross_entropy,
+                # let's stick to reliable F.cross_entropy for the fix unless confident on Liger usage.
+                
+                # REVERTED to standard robustness:
                 main_loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)),
-                    targets.view(-1),
+                    shift_logits.view(-1, shift_logits.size(-1)),
+                    shift_labels.view(-1),
                     ignore_index=-100,
-                    label_smoothing=0.1  # Prevents overconfidence
+                    label_smoothing=0.1
                 )
             else:
-                # Standard path (inference or fallback)
-                logits = self.lm_head(x)  # [batch, seq, vocab_size]
+                # Standard path
                 main_loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)),
-                    targets.view(-1),
+                    shift_logits.view(-1, shift_logits.size(-1)),
+                    shift_labels.view(-1),
                     ignore_index=-100,
-                    label_smoothing=0.1  # Prevents overconfidence
+                    label_smoothing=0.1
                 )
             
             # Add load balancing loss if router was used
