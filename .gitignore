@@ -71,3 +71,11 @@ src/modules/mamba_v1_backup.py
 # External Modules
 arxiv-mcp/
 web_chat/
+verify_mamba_math.py
+.gitignore
+verify_causal.py
+verify_modules.py
+.gitignore
+check_mamba_init.py
+check_tokenizer.py
+debug_data.py

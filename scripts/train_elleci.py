@@ -487,9 +487,11 @@ def train():
         batch = batch.to(config.device)
         
         # Prepare targets (Mask padding with -100 so loss ignores it)
+        # Prepare targets
         targets = batch.clone()
-        if tokenizer.pad_token_id is not None:
-           targets[targets == tokenizer.pad_token_id] = -100
+        # CRITICAL FIX: Do NOT mask padding if PAD_ID == EOS_ID and dataset is packed.
+        # if tokenizer.pad_token_id is not None:
+        #    targets[targets == tokenizer.pad_token_id] = -100
         
         # Forward Pass
         # Note: mixed precision (autocast) context is handled globally or by accelerator

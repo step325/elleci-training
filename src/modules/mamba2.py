@@ -70,10 +70,26 @@ class Mamba2Block(nn.Module):
         # Delta (dt) projection - per head
         self.dt_proj = nn.Linear(self.n_heads, self.d_inner, bias=True)
         
-        # Initialize dt bias for stability
-        dt_init_std = 0.02
+        # Initialize dt bias for stability (Preserve long-term memory)
+        # We want small initial dt values so decay is close to 1.
+        # dt_init range [0.001, 0.1] corresponds to decay [0.999, 0.9]
+        dt_init_min = 0.001
+        dt_init_max = 0.1
+        dt_init = torch.exp(
+            torch.rand(self.n_heads) * (math.log(dt_init_max) - math.log(dt_init_min))
+            + math.log(dt_init_min)
+        )
+        # inv_softplus(x) = log(exp(x) - 1)
+        # For small x, this is approx log(x)
+        inv_dt = torch.log(torch.exp(dt_init) - 1)
+        
+        # Broadcast to d_inner (since dt_proj maps n_heads -> d_inner)
+        # Each head controls head_dim channels
+        inv_dt = inv_dt.repeat_interleave(self.head_dim)
+        
         with torch.no_grad():
-            self.dt_proj.bias.uniform_(-dt_init_std, dt_init_std)
+            self.dt_proj.weight.fill_(0.0) # Zero weight init for dt
+            self.dt_proj.bias.copy_(inv_dt)
         
         # MAMBA-2 KEY CHANGE: Scalar A per head (not diagonal matrix)
         # This dramatically simplifies computation and enables Tensor Core usage
@@ -336,14 +352,22 @@ class Mamba2BlockFast(Mamba2Block):
         # x_contrib: [batch, cs, h, d, d_state]
         
         # Apply cumulative decay (approximate causal masking)
-        # Each position i sees contributions from positions j <= i, decayed by prod of decays
-        x_contrib_decayed = x_contrib * cum_decay.unsqueeze(-1)
+        # We need to compute: Sum_{k=0}^t (u_k * Prod_{m=k+1}^t d_m)
+        # = Prod_{0}^t d_m * Sum_{k=0}^t (u_k / Prod_{0}^k d_m)
+        # = cum_decay * cumsum( x_contrib / cum_decay )
         
-        # Cumulative sum of contributions
-        cumsum_contrib = x_contrib_decayed.cumsum(dim=1)
+        # 1. Invert cumulative decay
+        # Add epsilon to avoid division by zero
+        inv_cum_decay = 1.0 / cum_decay.unsqueeze(-1).clamp(min=1e-20)
         
-        # Divide by current decay to get proper scaling
-        state_new = cumsum_contrib / cum_decay.unsqueeze(-1).clamp(min=1e-8)
+        # 2. X term scaled by inverse decay
+        x_scaled = x_contrib * inv_cum_decay
+        
+        # 3. Cumulative sum
+        cumsum_scaled = x_scaled.cumsum(dim=1)
+        
+        # 4. Multiply by current cumulative decay
+        state_new = cumsum_scaled * cum_decay.unsqueeze(-1)
         
         # Add previous state contribution
         state_expanded = state.unsqueeze(1)  # [batch, 1, h, d, d_state]

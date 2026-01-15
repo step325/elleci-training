@@ -65,7 +65,10 @@ class BitLinear(nn.Linear):
         x_quant = x_quant.to(x.dtype)
         
         # Straight-Through Estimator: use quantized in forward, original gradient
-        return x_quant + (x - x_quant).detach()
+        # We return x + (x_quant - x).detach()
+        # Forward: x + x_quant - x = x_quant
+        # Backward: gradient flows through x (STE)
+        return x + (x_quant - x).detach()
     
     def weight_quant(self, w: torch.Tensor) -> torch.Tensor:
         """
@@ -96,7 +99,7 @@ class BitLinear(nn.Linear):
         
         # Cast back and Straight-Through Estimator
         w_quant = w_quant.to(w.dtype)
-        return w_quant + (w - w_quant).detach()
+        return w + (w_quant - w).detach()
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
