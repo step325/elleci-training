@@ -9,6 +9,6 @@ model_path = hf_hub_download(
     repo_id="Stepkrep/elleci",
     filename="elleci_v1_final.pth",
     local_dir="checkpoints",
-    # token=os.environ.get("HF_TOKEN") # Best practice: use env var or login via CLI
+    token=os.environ.get("HF_TOKEN")
 )
 print(f"Model downloaded to {model_path}")
