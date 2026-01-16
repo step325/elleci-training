@@ -83,3 +83,10 @@ SCAN_MATH_VERIFICATION.md
 ARCHITECTURE_VERIFICATION.md
 scripts/test_checkpoint.py
 scripts/test_language_quality.py
+scripts/test_architecture_stress.py
+.gitignore
+scripts/test_full_suite.py
+.gitignore
+scripts/test_output_quality.py
+scripts/test_semantic_quality.py
+scripts/test_components.py
