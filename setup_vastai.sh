@@ -1,0 +1,74 @@
+#!/bin/bash
+# ============================================================
+# Elleci - Setup per vast.ai (RTX 4090)
+# ============================================================
+
+echo "========================================"
+echo "  ELLECI - Setup vast.ai"
+echo "========================================"
+
+# Verifica GPU
+echo ""
+echo "[1/5] Verifica GPU..."
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+echo ""
+
+# Verifica PyTorch (già nel template)
+echo "[2/5] Verifica PyTorch..."
+python -c "import torch; print(f'PyTorch {torch.__version__} - CUDA {torch.cuda.is_available()}')" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "[!] PyTorch non trovato - qualcosa non va col template vast.ai"
+    exit 1
+fi
+
+# Installa solo pacchetti mancanti
+echo ""
+echo "[3/5] Installazione dipendenze (solo mancanti)..."
+pip install --quiet --upgrade-strategy only-if-needed \
+    bitsandbytes>=0.41.0 \
+    datasets>=2.14.0 \
+    einops>=0.7.0 \
+    accelerated-scan>=0.2.0 \
+    wandb>=0.15.0 \
+    tqdm>=4.65.0 \
+    transformers>=4.35.0 \
+    tokenizers>=0.15.0
+
+echo "   Dipendenze OK"
+
+# Verifica imports critici
+echo ""
+echo "[4/5] Verifica imports..."
+python -c "
+import torch
+import bitsandbytes
+import datasets
+import einops
+from accelerated_scan.scalar import scan
+print('   Tutti gli import OK')
+" 2>/dev/null
+
+if [ $? -ne 0 ]; then
+    echo "[!] Alcuni import falliti - controlla errori sopra"
+fi
+
+# Verifica checkpoint
+echo ""
+echo "[5/5] Verifica checkpoint..."
+if [ -f "checkpoints/elleci_v1_final.pth" ]; then
+    SIZE=$(du -h checkpoints/elleci_v1_final.pth | cut -f1)
+    echo "   Checkpoint trovato: $SIZE"
+else
+    echo "[!] Checkpoint NON trovato!"
+    echo "    Copia il checkpoint con:"
+    echo "    scp checkpoints/elleci_v1_final.pth vastai:~/Elleci/checkpoints/"
+fi
+
+echo ""
+echo "========================================"
+echo "  Setup completato!"
+echo ""
+echo "  Per avviare il fine-tuning:"
+echo "  python scripts/finetune_instructions.py \\"
+echo "      --checkpoint checkpoints/elleci_v1_final.pth"
+echo "========================================"

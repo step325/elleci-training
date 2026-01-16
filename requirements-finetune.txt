@@ -1,0 +1,14 @@
+# Elleci - Fine-tuning Requirements (vast.ai 4090)
+# PyTorch è già nel template vast.ai - NON reinstallare
+
+# Solo pacchetti aggiuntivi necessari
+bitsandbytes>=0.41.0      # 8-bit optimizer (risparmia VRAM)
+datasets>=2.14.0          # HuggingFace datasets streaming
+einops>=0.7.0             # Tensor operations per Mamba
+accelerated-scan>=0.2.0   # Parallel scan per Mamba-2
+wandb>=0.15.0             # Logging (opzionale)
+tqdm>=4.65.0              # Progress bar
+
+# Questi potrebbero già esserci - pip skippa se soddisfatti
+transformers>=4.35.0
+tokenizers>=0.15.0
