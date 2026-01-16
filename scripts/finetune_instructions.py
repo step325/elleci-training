@@ -149,16 +149,16 @@ class InstructionDataset(IterableDataset):
 
         self.complexity_keywords = {
             "simple": {
-                "max_length": 200,  # Short responses
-                "keywords": ["what is", "who is", "define", "cos'è", "chi è", "qual è"],
+                "max_length": 500,  # Increased length, removed keywords requirement
+                "keywords": [],
             },
             "medium": {
-                "max_length": 500,
-                "keywords": ["explain", "list", "describe", "spiega", "elenca", "descrivi"],
+                "max_length": 1500, # Increased length
+                "keywords": [],
             },
             "complex": {
-                "max_length": 2000,
-                "keywords": ["why", "how", "analyze", "compare", "perché", "come", "analizza"],
+                "max_length": 4000,
+                "keywords": [],
             },
         }
 
@@ -435,21 +435,29 @@ class InstructionEvaluator:
 
         # Test prompts for evaluation
         self.eval_prompts = [
-            # Italian
-            ("<|im_start|>user\nQual è la capitale dell'Italia?<|im_end|>\n<|im_start|>assistant\n",
-             ["Roma", "roma"], "it_factual"),
-            ("<|im_start|>user\nCiao, come stai?<|im_end|>\n<|im_start|>assistant\n",
-             ["bene", "ciao", "salve"], "it_greeting"),
-            ("<|im_start|>user\nQuanto fa 2+2?<|im_end|>\n<|im_start|>assistant\n",
-             ["4", "quattro"], "it_math"),
-
-            # English
-            ("<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n",
-             ["Paris"], "en_factual"),
-            ("<|im_start|>user\nHello, how are you?<|im_end|>\n<|im_start|>assistant\n",
-             ["hello", "good", "well", "fine"], "en_greeting"),
-            ("<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
-             ["4", "four"], "en_math"),
+            # Greetings / Basic
+            ("<|im_start|>user\nCiao, come stai?<|im_end|>\n<|im_start|>assistant\n", ["bene", "grazie", "aiutarti"], "chat"),
+            ("<|im_start|>user\nHello, how are you?<|im_end|>\n<|im_start|>assistant\n", ["good", "thanks", "help"], "chat"),
+            
+            # Factual
+            ("<|im_start|>user\nQual è la capitale della Francia?<|im_end|>\n<|im_start|>assistant\n", ["parigi", "paris"], "fact"),
+            ("<|im_start|>user\nWho wrote 'Romeo and Juliet'?<|im_end|>\n<|im_start|>assistant\n", ["shakespeare"], "fact"),
+            ("<|im_start|>user\nWhat is the boiling point of water?<|im_end|>\n<|im_start|>assistant\n", ["100", "degrees", "celsius"], "fact"),
+            
+            # Reasoning
+            ("<|im_start|>user\nSe ho 3 mele e ne mangio una, quante me ne restano?<|im_end|>\n<|im_start|>assistant\n", ["2", "due"], "logic"),
+            ("<|im_start|>user\nIf I have 5 apples and buy 2 more, how many do I have?<|im_end|>\n<|im_start|>assistant\n", ["7", "seven"], "logic"),
+            
+            # Translation
+            ("<|im_start|>user\nTranslate 'Dog' into Italian.<|im_end|>\n<|im_start|>assistant\n", ["cane"], "trans"),
+            ("<|im_start|>user\nTraduci 'Gatto' in inglese.<|im_end|>\n<|im_start|>assistant\n", ["cat"], "trans"),
+            
+            # Coding (Simple)
+            ("<|im_start|>user\nWrite a Python function to add two numbers.<|im_end|>\n<|im_start|>assistant\n", ["def", "return", "+", "add"], "code"),
+            
+            # Instruction Following
+            ("<|im_start|>user\nList three primary colors.<|im_end|>\n<|im_start|>assistant\n", ["red", "blue", "yellow", "rosso", "blu", "giallo"], "instruct"),
+            ("<|im_start|>user\nElenca i tre colori primari.<|im_end|>\n<|im_start|>assistant\n", ["rosso", "blu", "giallo"], "instruct"),
         ]
 
     @torch.no_grad()
