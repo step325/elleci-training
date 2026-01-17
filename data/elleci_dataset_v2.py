@@ -280,7 +280,7 @@ class EllediDatasetV2(IterableDataset):
                 streaming=True,
                 token=self.hf_token
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=100))
         except Exception as e:
             print(f"  OpenOrca failed: {e}")
             return iter([])
@@ -296,7 +296,7 @@ class EllediDatasetV2(IterableDataset):
                 streaming=True,
                 token=self.hf_token
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=500))
         except Exception as e:
             print(f"  Fauno StackOverflow failed: {e}, trying Quora")
             try:
@@ -306,7 +306,7 @@ class EllediDatasetV2(IterableDataset):
                     streaming=True,
                     token=self.hf_token
                 )
-                return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+                return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=500))
             except Exception as e2:
                 print(f"  Fauno Quora also failed: {e2}")
                 return iter([])
@@ -321,7 +321,7 @@ class EllediDatasetV2(IterableDataset):
                 streaming=True,
                 token=self.hf_token
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=500))
         except Exception as e:
             print(f"  Alpaca IT failed: {e}")
             return iter([])
@@ -336,7 +336,7 @@ class EllediDatasetV2(IterableDataset):
                 streaming=True,
                 token=self.hf_token
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=500))
         except Exception as e:
             print(f"  Dolly failed: {e}")
             return iter([])
@@ -351,7 +351,7 @@ class EllediDatasetV2(IterableDataset):
                 streaming=True,
                 token=self.hf_token
             )
-            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=1000))
+            return iter(ds.shuffle(seed=random.randint(0, 100000), buffer_size=500))
         except Exception as e:
             print(f"  CodeAlpaca failed: {e}")
             return iter([])
