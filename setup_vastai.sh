@@ -41,16 +41,21 @@ pip install --quiet --upgrade-strategy only-if-needed \
     wandb>=0.15.0 \
     tqdm>=4.65.0 \
     transformers>=4.35.0 \
-    tokenizers>=0.15.0
+    tokenizers>=0.15.0 \
+    accelerated-scan
 
 # 3. Flash Attention 2 (Critico per A100)
-echo "   Installazione Flash Attention 2 (può richiedere qualche minuto - modalità bilanciata 4 core)..."
-MAX_JOBS=4 pip install flash-attn --no-build-isolation
+echo "   Installazione Flash Attention 2..."
+# Prova prima wheel precompilata (veloce), poi compila come fallback
+pip install flash-attn --no-build-isolation 2>/dev/null || \
+    (echo "   Wheel non trovata, compilazione da sorgente..." && \
+     MAX_JOBS=4 FLASH_ATTENTION_ARCH_LIST="8.0" pip install -v flash-attn --no-build-isolation)
 
 # 4. Mamba Kernels (Critico per velocità Mamba)
 echo "   Installazione Mamba Kernels..."
-MAX_JOBS=4 pip install causal-conv1d>=1.2.0 --no-build-isolation
-MAX_JOBS=4 pip install mamba-ssm>=1.2.0 --no-build-isolation
+MAX_JOBS=4 pip install -v causal-conv1d>=1.2.0 --no-build-isolation
+# Anche per mamba-ssm limitiamo l'architettura
+MAX_JOBS=4 MAMBA_FORCE_BUILD=TRUE pip install -v mamba-ssm>=1.2.0 --no-build-isolation
 
 echo "   Dipendenze e Kernel OK"
 
