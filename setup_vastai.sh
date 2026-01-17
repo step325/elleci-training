@@ -27,7 +27,8 @@ echo "[3/5] Installazione dipendenze e Kernel Ottimizzati..."
 
 # 1. Build tools (essenziali per compilare flash-attn)
 # Limit jobs to prevent OOM and define local TMPDIR
-export MAX_JOBS=1
+# 4 jobs is safe for 64GB RAM (~16GB/job)
+export MAX_JOBS=4
 export TMPDIR=~/tmp_build
 mkdir -p $TMPDIR
 pip install --quiet packaging numpy
@@ -43,13 +44,13 @@ pip install --quiet --upgrade-strategy only-if-needed \
     tokenizers>=0.15.0
 
 # 3. Flash Attention 2 (Critico per A100)
-echo "   Installazione Flash Attention 2 (può richiedere qualche minuto - modalità sicura)..."
-MAX_JOBS=1 pip install flash-attn --no-build-isolation
+echo "   Installazione Flash Attention 2 (può richiedere qualche minuto - modalità bilanciata 4 core)..."
+MAX_JOBS=4 pip install flash-attn --no-build-isolation
 
 # 4. Mamba Kernels (Critico per velocità Mamba)
 echo "   Installazione Mamba Kernels..."
-MAX_JOBS=1 pip install causal-conv1d>=1.2.0 --no-build-isolation
-MAX_JOBS=1 pip install mamba-ssm>=1.2.0 --no-build-isolation
+MAX_JOBS=4 pip install causal-conv1d>=1.2.0 --no-build-isolation
+MAX_JOBS=4 pip install mamba-ssm>=1.2.0 --no-build-isolation
 
 echo "   Dipendenze e Kernel OK"
 
