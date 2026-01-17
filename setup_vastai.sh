@@ -26,9 +26,11 @@ echo ""
 echo "[3/5] Installazione dipendenze e Kernel Ottimizzati..."
 
 # 1. Build tools (essenziali per compilare flash-attn)
-# Limit jobs to prevent OOM on A100 (27 cores)
-export MAX_JOBS=4
-pip install --quiet ninja packaging
+# Limit jobs to prevent OOM and define local TMPDIR
+export MAX_JOBS=2
+export TMPDIR=~/tmp_build
+mkdir -p $TMPDIR
+pip install --quiet ninja packaging numpy
 
 # 2. PyTorch dependencies base
 pip install --quiet --upgrade-strategy only-if-needed \
@@ -46,8 +48,8 @@ pip install flash-attn --no-build-isolation
 
 # 4. Mamba Kernels (Critico per velocità Mamba)
 echo "   Installazione Mamba Kernels..."
-pip install causal-conv1d>=1.2.0
-pip install mamba-ssm>=1.2.0
+pip install causal-conv1d>=1.2.0 --no-build-isolation
+pip install mamba-ssm>=1.2.0 --no-build-isolation
 
 echo "   Dipendenze e Kernel OK"
 
