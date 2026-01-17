@@ -164,7 +164,7 @@ def get_current_phase(step, training_config):
         return 3
 
 
-def get_batch_size_for_seq_len(seq_len, base_batch_size=2):
+def get_batch_size_for_seq_len(seq_len, base_batch_size=4):
     """Scale batch size inversely with sequence length."""
     if seq_len <= 256:
         return base_batch_size * 4
@@ -479,6 +479,21 @@ def train():
 
     # Create model
     model = Elleci(config).to(config.device)
+
+    # A100 Optimization: Disable Gradient Checkpointing if VRAM is sufficient (>35GB)
+    # This speeds up training by ~30% at the cost of more VRAM usage.
+    if config.device == "cuda":
+        vram = torch.cuda.get_device_properties(0).total_memory / 1e9
+        if vram > 35.0:
+            print(f"\n[OPTIMIZATION] High VRAM detected ({vram:.2f} GB). Disabling Gradient Checkpointing for speed! 🚀")
+            # Explicitly disable if the model has the method
+            if hasattr(model, 'gradient_checkpointing_disable'):
+                model.gradient_checkpointing_disable()
+            # Also set the internal flag if present
+            if hasattr(model, 'gradient_checkpointing'):
+                 model.gradient_checkpointing = False
+        else:
+            print(f"\n[OPTIMIZATION] Standard VRAM detected ({vram:.2f} GB). Keeping Gradient Checkpointing enabled.")
 
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())

@@ -100,3 +100,4 @@ scripts/verify_model_v2.py
 scripts/debug_curriculum.py
 scripts/analyze_data_loss.py
 scripts/evaluate_detailed.py
+scripts/test_thinking.py
