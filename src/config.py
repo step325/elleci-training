@@ -64,7 +64,74 @@ class ThinkingLoopConfig:
     """Configuration for recurrent thinking loop"""
     max_iterations: int = 4   # Maximum thinking iterations
     convergence_threshold: float = 0.01  # Stop if change < threshold
+
+
+@dataclass
+class MoEConfig:
+    """Configuration for Mixture of Experts (Elleci v2)"""
+    d_model: int = 2048
+    num_experts: int = 8
+    top_k: int = 2
+    # MoE layers (applied only to Mamba blocks - 75/25 ratio: all except 3, 7, 11, 15, 19, 23)
+    moe_layers: tuple = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 20, 21, 22)
+    # Drop-Upcycling
+    drop_ratio: float = 0.2
+    # Router settings
+    router_type: str = "top_k"  # "top_k" or "expert_choice"
+    router_jitter: float = 0.0  # Noise for load balancing during training
+    # Auxiliary losses
+    aux_loss_weight: float = 0.01
+    dpsl_prior: float = 0.125  # 1/8 for 8 experts (uniform)
+    spr_loss_weight: float = 0.1  # Weight for Similarity Preserving Router Loss (ArXiv 2506.14038)
+    max_spr_tokens: int = 256  # Max tokens for SPR computation (avoids OOM)
+    erc_loss_weight: float = 0.1  # Weight for Expert-Router Coupling Loss (ArXiv 2512.23447)
+    # MoE++ settings
+    zero_computation_experts: bool = False
+    # FFN expansion
+    ffn_expansion: float = 8/3  # SwiGLU factor
+
+    def __post_init__(self):
+        if self.dpsl_prior is None:
+            self.dpsl_prior = 1.0 / self.num_experts
     
+
+@dataclass
+class TrainingConfigV2:
+    """Configuration for Elleci v2 3-phase training"""
+    # Total steps per phase
+    phase1_steps: int = 35000  # English Foundation (60%)
+    phase2_steps: int = 15000  # Italian Knowledge (25%)
+    phase3_steps: int = 10000  # Instruction Alignment (15%)
+
+    # Curriculum learning: (progress_threshold, seq_len)
+    curriculum_schedule: tuple = (
+        (0.20, 256),   # First 20%: 256 tokens
+        (0.60, 512),   # 20-60%: 512 tokens
+        (1.00, 1024),  # 60-100%: 1024 tokens
+    )
+
+    # Instruction phase uses longer sequences
+    instruction_curriculum: tuple = (
+        (0.50, 1024),  # First 50%: 1024 tokens
+        (1.00, 2048),  # Last 50%: 2048 tokens
+    )
+
+    # Warmup
+    warmup_ratio: float = 0.05  # 5% warmup
+
+    # SWA (Stochastic Weight Averaging)
+    swa_start_ratio: float = 0.80  # Start at 80% of training
+    swa_lr_factor: float = 0.5
+
+    # Checkpointing
+    save_interval: int = 5000
+    eval_interval: int = 1000
+    keep_last_checkpoints: int = 3
+
+    @property
+    def total_steps(self) -> int:
+        return self.phase1_steps + self.phase2_steps + self.phase3_steps
+
 
 @dataclass
 class ElleciConfig:
@@ -74,32 +141,38 @@ class ElleciConfig:
     n_layers: int = 24
     vocab_size: int = 32128   # Elleci tokenizer vocab size
     max_seq_len: int = 1024
-    
+
     # Sub-module configs
     bitnet: BitNetConfig = field(default_factory=BitNetConfig)
     mla: MLAConfig = field(default_factory=MLAConfig)
     mamba: MambaConfig = field(default_factory=MambaConfig)
     router: RouterConfig = field(default_factory=RouterConfig)
-    mamba: MambaConfig = field(default_factory=MambaConfig)
-    router: RouterConfig = field(default_factory=RouterConfig)
     thinking: ThinkingLoopConfig = field(default_factory=ThinkingLoopConfig)
-    
+    moe: MoEConfig = field(default_factory=MoEConfig)
+    training_v2: TrainingConfigV2 = field(default_factory=TrainingConfigV2)
+
     # Architecture flags
     use_router: bool = False  # Default to False (Production v2 backbone)
+    use_moe: bool = False     # Enable Mixture of Experts (Elleci v2-MoE)
+    use_v2: bool = True       # Enable v2 modules (DiffMamba2, EG-MLA) - ENABLED for better performance
+    use_4bit_act: bool = False  # Enable 4-bit activations (BitNet a4.8)
     ffn_type: str = "swiglu"  # Standard V2-A
     norm_type: str = "rms"    # Standard V2-A
-    
+
+    # Dropout (regularization)
+    dropout: float = 0.1
+
     # Training
     batch_size: int = 16
-    learning_rate: float = 1e-3
-    weight_decay: float = 0.0
+    learning_rate: float = 3e-4  # Updated for v2
+    weight_decay: float = 0.1    # Updated for v2
     max_grad_norm: float = 1.0
-    
+
     # System
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     mixed_precision: str = "bf16"  # bf16, fp16, or none
     seed: int = 42
-    
+
     # Logging
     log_interval: int = 100
     eval_interval: int = 500
@@ -110,16 +183,28 @@ class ElleciConfig:
         self.mla.d_model = self.d_model
         self.mamba.d_model = self.d_model
         self.router.d_model = self.d_model
-        
+        self.moe.d_model = self.d_model
+
         # Auto-set n_heads based on d_model (head_dim should be 64-128)
         # d_model=768 -> 12 heads (head_dim=64)
+        # d_model=1024 -> 16 heads (head_dim=64)
         # d_model=2048 -> 16 heads (head_dim=128)
         if self.d_model >= 2048:
             self.mla.n_heads = 16  # head_dim = 128
         elif self.d_model >= 1024:
             self.mla.n_heads = 16  # head_dim = 64
-        else:
+        elif self.d_model >= 768:
             self.mla.n_heads = 12  # head_dim = 64 for 768d
+        else:
+            # For smaller models, find largest divisor <= 16
+            for n in [16, 12, 8, 4, 2, 1]:
+                if self.d_model % n == 0:
+                    self.mla.n_heads = n
+                    break
+
+        # Verify divisibility
+        assert self.d_model % self.mla.n_heads == 0, \
+            f"d_model ({self.d_model}) must be divisible by n_heads ({self.mla.n_heads})"
         
     def to_dict(self):
         """Convert config to dictionary"""

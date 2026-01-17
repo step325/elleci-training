@@ -90,3 +90,13 @@ scripts/test_full_suite.py
 scripts/test_output_quality.py
 scripts/test_semantic_quality.py
 scripts/test_components.py
+docs/post_training_research.md
+docs/Piano.md
+docs/architecture_v2.md
+docs/post_training_research.md
+
+scripts/test_v2_500steps.py
+scripts/verify_model_v2.py
+scripts/debug_curriculum.py
+scripts/analyze_data_loss.py
+scripts/evaluate_detailed.py

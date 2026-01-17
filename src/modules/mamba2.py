@@ -109,41 +109,106 @@ class Mamba2Block(nn.Module):
         # Activation
         self.act = nn.SiLU()
         
-    def forward(self, x):
+    def forward(self, x, use_cache=False, past_state=None):
         """
         Forward pass through Mamba-2 block.
-        
+
         Args:
             x: [batch, seq_len, d_model]
-            
+            use_cache: Whether to return state for caching (inference)
+            past_state: Previous SSM state [batch, n_heads, head_dim, d_state]
+
         Returns:
-            output: [batch, seq_len, d_model]
+            If use_cache:
+                output: [batch, seq_len, d_model]
+                present_state: [batch, n_heads, head_dim, d_state]
+            Else:
+                output: [batch, seq_len, d_model]
         """
         batch, seqlen, dim = x.shape
-        
+
         # 1. Expand input (same as v1)
         x_expanded = self.in_proj(x)  # [batch, seq, d_inner*2]
         x_expanded, z = x_expanded.chunk(2, dim=-1)  # Split for gating
-        
+
         # 2. Depthwise convolution (local context)
         x_conv = rearrange(x_expanded, 'b l d -> b d l')
         x_conv = self.conv1d(x_conv)[:, :, :seqlen]  # Trim padding
         x_conv = rearrange(x_conv, 'b d l -> b l d')
         x_conv = self.act(x_conv)
-        
+
         # 3. SSD (State Space Duality) - Mamba-2 core
-        y = self.ssd_forward(x_conv)
-        
+        if use_cache:
+            y, present_state = self.ssd_forward_cached(x_conv, past_state)
+        else:
+            y = self.ssd_forward(x_conv)
+            present_state = None
+
         # 4. Gate with z
         y = y * self.act(z)
-        
+
         # 5. Normalization (CRITICAL for stability!)
         y = self.norm(y)
-        
+
         # 6. Output projection
         output = self.out_proj(y)
-        
+
+        if use_cache:
+            return output, present_state
         return output
+
+    def ssd_forward_cached(self, x, past_state=None):
+        """
+        SSD forward pass with state caching support for inference.
+
+        Args:
+            x: [batch, seq_len, d_inner]
+            past_state: Previous state [batch, n_heads, head_dim, d_state]
+
+        Returns:
+            y: [batch, seq_len, d_inner]
+            present_state: [batch, n_heads, head_dim, d_state]
+        """
+        batch, seqlen, d_inner = x.shape
+
+        # Get SSD parameters
+        x_proj = self.x_proj(x)  # [batch, seq, n_heads + d_state*2]
+
+        # Split projections
+        dt = x_proj[..., :self.n_heads]  # [batch, seq, n_heads]
+        B = x_proj[..., self.n_heads:self.n_heads+self.d_state]  # [batch, seq, d_state]
+        C = x_proj[..., self.n_heads+self.d_state:]  # [batch, seq, d_state]
+
+        # Process delta (time step)
+        dt = self.dt_proj(dt)  # [batch, seq, d_inner]
+        dt = F.softplus(dt)  # Ensure positive
+
+        # Get A (SCALAR per head in Mamba-2!)
+        A = -torch.exp(self.A_log.float())  # [n_heads]
+
+        # Reshape for multi-head processing
+        x_heads = rearrange(x, 'b l (h d) -> b l h d', h=self.n_heads)
+        dt_heads = rearrange(dt, 'b l (h d) -> b l h d', h=self.n_heads)
+
+        # Initialize or use past state
+        if past_state is None:
+            state = torch.zeros(batch, self.n_heads, self.head_dim, self.d_state,
+                              device=x.device, dtype=x.dtype)
+        else:
+            state = past_state
+
+        # Single-chunk processing with state
+        y, final_state = self.chunk_forward(x_heads, dt_heads, None, B, C, state)
+
+        # Reshape back
+        y = rearrange(y, 'b l h d -> b l (h d)')
+
+        # Add skip connection
+        D = repeat(self.D, 'h -> 1 1 h 1').expand(batch, seqlen, self.n_heads, self.head_dim)
+        D = rearrange(D, 'b l h d -> b l (h d)')
+        y = y + x * D
+
+        return y, final_state.detach()
     
     def ssd_forward(self, x):
         """
@@ -415,15 +480,161 @@ class Mamba2BlockFast(Mamba2Block):
 
 
 
+class DifferentialMamba2Block(Mamba2BlockFast):
+    """
+    Differential Mamba-2 Block (arXiv:2507.06204)
+
+    Adds a differential mechanism to reduce over-allocation of attention
+    to irrelevant context. Key insight: model should focus more on
+    changes/differences in the input rather than static context.
+
+    The differential signal helps filter out redundant information and
+    improves context utilization.
+
+    Args:
+        config: MambaConfig with d_model, d_state, n_heads, etc.
+    """
+    def __init__(self, config):
+        super().__init__(config)
+
+        # Differential gating mechanism
+        # Projects difference signal to per-head gates
+        self.diff_gate = nn.Linear(self.d_model, self.n_heads, bias=True)
+
+        # Initialize gate bias to 0 (start with 50% gate)
+        nn.init.zeros_(self.diff_gate.bias)
+        nn.init.xavier_uniform_(self.diff_gate.weight, gain=0.1)
+
+        # Optional: learnable temperature for gate sharpness
+        self.gate_temperature = nn.Parameter(torch.ones(1))
+
+    def forward(self, x, use_cache=False, past_state=None):
+        """
+        Forward pass with differential gating.
+
+        Args:
+            x: [batch, seq_len, d_model]
+            use_cache: Whether to return state for caching (inference)
+            past_state: Previous SSM state [batch, n_heads, head_dim, d_state]
+
+        Returns:
+            If use_cache:
+                output: [batch, seq_len, d_model]
+                present_state: [batch, n_heads, head_dim, d_state]
+            Else:
+                output: [batch, seq_len, d_model]
+        """
+        batch, seqlen, dim = x.shape
+
+        # 1. Compute differential signal
+        # diff[t] = x[t] - x[t-1]
+        # First position has no previous, use zero
+        x_prev = F.pad(x[:, :-1, :], (0, 0, 1, 0), value=0)  # Shift right
+        diff = x - x_prev  # [batch, seq, d_model]
+
+        # 2. Compute differential gate (per head)
+        # Higher gate = more focus on change, less on static context
+        gate_logits = self.diff_gate(diff)  # [batch, seq, n_heads]
+        diff_gate = torch.sigmoid(gate_logits / self.gate_temperature)
+
+        # 3. Standard Mamba-2 processing
+        # Input expansion
+        x_expanded = self.in_proj(x)
+        x_expanded, z = x_expanded.chunk(2, dim=-1)
+
+        # Depthwise convolution
+        x_conv = rearrange(x_expanded, 'b l d -> b d l')
+        x_conv = self.conv1d(x_conv)[:, :, :seqlen]
+        x_conv = rearrange(x_conv, 'b d l -> b l d')
+        x_conv = self.act(x_conv)
+
+        # 4. Apply differential gating to SSM input
+        # Modulate x_conv based on differential signal
+        # Expand gate to match head_dim
+        gate_expanded = repeat(
+            diff_gate, 'b l h -> b l (h d)',
+            d=self.head_dim
+        )  # [batch, seq, d_inner]
+
+        # Blend original and difference-focused processing
+        # Higher gate = stronger differential focus
+        x_diff = x_conv * (1 + gate_expanded * 0.5)  # Soft modulation
+
+        # 5. SSD forward with optional caching
+        if use_cache:
+            y, present_state = self.ssd_forward_cached(x_diff, past_state)
+        else:
+            y = self.ssd_forward(x_diff)
+            present_state = None
+
+        # 6. Gate and project
+        y = y * self.act(z)
+        y = self.norm(y)
+        output = self.out_proj(y)
+
+        if use_cache:
+            return output, present_state
+        return output
+
+
+class AdaptiveChunkMamba2Block(Mamba2BlockFast):
+    """
+    Mamba-2 Block with adaptive chunk size based on sequence length.
+
+    Automatically selects optimal chunk size for better efficiency:
+    - Short sequences (<=256): chunk_size=32
+    - Medium sequences (<=512): chunk_size=64
+    - Long sequences (<=1024): chunk_size=128
+    - Very long sequences (>1024): chunk_size=256
+
+    Args:
+        config: MambaConfig
+    """
+    CHUNK_SIZES = {
+        256: 32,
+        512: 64,
+        1024: 128,
+        float('inf'): 256
+    }
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.base_chunk_size = config.chunk_size
+
+    def get_adaptive_chunk_size(self, seq_len: int) -> int:
+        """Get optimal chunk size for sequence length."""
+        for threshold, chunk_size in sorted(self.CHUNK_SIZES.items()):
+            if seq_len <= threshold:
+                return chunk_size
+        return 256
+
+    def forward(self, x):
+        """Forward with adaptive chunk size."""
+        batch, seqlen, dim = x.shape
+
+        # Temporarily override chunk_size
+        original_chunk = self.chunk_size
+        self.chunk_size = self.get_adaptive_chunk_size(seqlen)
+
+        # Standard forward
+        output = super().forward(x)
+
+        # Restore original
+        self.chunk_size = original_chunk
+
+        return output
+
+
 # Compatibility wrapper to use as drop-in replacement
 def create_mamba_block(config, version='v2'):
     """
     Factory function to create Mamba block.
-    
+
     Args:
         config: Configuration object
-        version: 'v1' for original, 'v2' for Mamba-2, 'v2_fast' for optimized
-        
+        version: 'v1' for original, 'v2' for Mamba-2, 'v2_fast' for optimized,
+                 'v2_diff' for Differential Mamba, 'v2_adaptive' for adaptive chunk
+
     Returns:
         MambaBlock instance
     """
@@ -434,12 +645,22 @@ def create_mamba_block(config, version='v2'):
         return Mamba2Block(config)
     elif version == 'v2_fast':
         return Mamba2BlockFast(config)
+    elif version == 'v2_diff':
+        return DifferentialMamba2Block(config)
+    elif version == 'v2_adaptive':
+        return AdaptiveChunkMamba2Block(config)
     else:
         raise ValueError(f"Unknown version: {version}")
 
 
 # Export
-__all__ = ['Mamba2Block', 'Mamba2BlockFast', 'create_mamba_block']
+__all__ = [
+    'Mamba2Block',
+    'Mamba2BlockFast',
+    'DifferentialMamba2Block',
+    'AdaptiveChunkMamba2Block',
+    'create_mamba_block'
+]
 
 
 if __name__ == "__main__":

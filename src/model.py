@@ -18,12 +18,14 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
-from modules.bitnet import BitLinear
-from modules.mla import MLASelfAttention
+from modules.bitnet import BitLinear, BitLinear_a4
+from modules.mla import MLASelfAttention, EGMLASelfAttention
 from modules.mamba import MambaBlock
-from modules.mamba2 import Mamba2BlockFast
+from modules.mamba2 import Mamba2BlockFast, DifferentialMamba2Block
 from modules.router import AdaptiveRouter
 from modules.thinking_loop import ThinkingLoop
+from modules.moe import MoEFFN, MoEConfig
+from modules.rope import ContextAwareRoPE
 
 # Liger Kernel for fused operations (memory + speed optimization)
 # NOTE: Fused CE disabled due to Triton bug with vocab 32128 + bf16
@@ -51,15 +53,18 @@ class RMSNorm(nn.Module):
 
 # SwiGLU Feed-Forward Network
 class SwiGLUFFN(nn.Module):
-    def __init__(self, d_model, expansion_factor=8/3):
+    def __init__(self, d_model, expansion_factor=8/3, use_4bit_act=False):
         super().__init__()
         hidden_dim = int(d_model * expansion_factor)
         # Ensure hidden_dim is multiple of 256 for efficiency
         hidden_dim = 256 * ((hidden_dim + 256 - 1) // 256)
-        
-        self.w1 = BitLinear(d_model, hidden_dim)  # Gate projection
-        self.w2 = BitLinear(d_model, hidden_dim)  # Up projection
-        self.w3 = BitLinear(hidden_dim, d_model)  # Down projection
+
+        # v2: Use 4-bit activations for better efficiency
+        LinearClass = BitLinear_a4 if use_4bit_act else BitLinear
+
+        self.w1 = LinearClass(d_model, hidden_dim)  # Gate projection
+        self.w2 = LinearClass(d_model, hidden_dim)  # Up projection
+        self.w3 = LinearClass(hidden_dim, d_model)  # Down projection
 
     def forward(self, x):
         return self.w3(F.silu(self.w1(x)) * self.w2(x))
@@ -67,52 +72,124 @@ class SwiGLUFFN(nn.Module):
 class ElleciBlock(nn.Module):
     """
     Single transformer block with hybrid Mamba/MLA attention.
-    
+
+    v2 Features:
+    - DifferentialMamba2Block for Mamba layers (better context focus)
+    - EGMLASelfAttention for MLA layers (59.9% extra KV compression)
+    - MoE-FFN for Mamba layers (4B total, 1.2B active)
+    - BitLinear_a4 for 4-bit activations (55% sparsity)
+
     Can use either MLA or Mamba based on configuration.
     """
-    def __init__(self, config, use_mamba=False):
+    def __init__(self, config, use_mamba=False, layer_idx=0):
         super().__init__()
         self.use_mamba = use_mamba
-        
+        self.layer_idx = layer_idx
+
+        # v2 flags
+        use_v2 = getattr(config, 'use_v2', False)
+        use_moe = getattr(config, 'use_moe', False)
+        use_4bit = getattr(config, 'use_4bit_act', False)
+
         # Dropout for regularization (prevents overfitting)
         dropout_rate = getattr(config, 'dropout', 0.1)
         self.dropout = nn.Dropout(dropout_rate)
-        
+
         # Attention mechanism
         if use_mamba:
             # Use Mamba-2 if enabled in config, else fallback to v1
             if getattr(config.mamba, 'use_mamba2', True):
-                self.attn = Mamba2BlockFast(config.mamba)
+                # v2: Use Differential Mamba for better context handling
+                if use_v2:
+                    self.attn = DifferentialMamba2Block(config.mamba)
+                else:
+                    self.attn = Mamba2BlockFast(config.mamba)
             else:
                 self.attn = MambaBlock(config.mamba)
         else:
-            self.attn = MLASelfAttention(config.mla)
-        
-        # FFN (V2: SwiGLU default)
+            # v2: Use EG-MLA for extra KV compression
+            if use_v2:
+                self.attn = EGMLASelfAttention(config.mla)
+            else:
+                self.attn = MLASelfAttention(config.mla)
+
+        # FFN
+        # v2: MoE for Mamba layers, dense for MLA layers
         ffn_type = getattr(config, 'ffn_type', 'swiglu')
-        if ffn_type == 'swiglu':
-            self.ffn = SwiGLUFFN(config.d_model)
+
+        if use_moe and use_mamba:
+            # MoE-FFN for Mamba layers (even layers)
+            moe_layers = list(getattr(config.moe, 'moe_layers', []))
+            if layer_idx in moe_layers:
+                self.ffn = MoEFFN(config.d_model, config.moe)
+                self.is_moe = True
+            else:
+                self.ffn = SwiGLUFFN(config.d_model, use_4bit_act=use_4bit)
+                self.is_moe = False
+        elif ffn_type == 'swiglu':
+            self.ffn = SwiGLUFFN(config.d_model, use_4bit_act=use_4bit)
+            self.is_moe = False
         else:  # Legacy GELU
             self.ffn = nn.Sequential(
                 BitLinear(config.d_model, config.d_model * 4),
                 nn.GELU(),
                 BitLinear(config.d_model * 4, config.d_model),
             )
-        
+            self.is_moe = False
+
         # Norm (V2: RMSNorm default)
         norm_type = getattr(config, 'norm_type', 'rms')
         NormClass = RMSNorm if norm_type == 'rms' else nn.LayerNorm
         self.norm1 = NormClass(config.d_model)
         self.norm2 = NormClass(config.d_model)
-        
-    def forward(self, x):
+
+    def forward(self, x, use_cache=False, past_kv=None, past_mamba_state=None):
+        """
+        Forward pass through block.
+
+        Args:
+            x: Input tensor [batch, seq, d_model]
+            use_cache: Whether to return KV/Mamba state cache
+            past_kv: Previous KV cache (only for MLA blocks)
+            past_mamba_state: Previous Mamba SSM state (only for Mamba blocks)
+
+        Returns:
+            If use_cache: (output, present_kv, present_mamba_state)
+            Else: output
+        """
+        present_kv = None
+        present_mamba_state = None
+
         # Attention + dropout + residual
-        x = x + self.dropout(self.attn(self.norm1(x)))
-        
+        if use_cache:
+            if self.use_mamba:
+                # Mamba with state caching
+                attn_out, present_mamba_state = self.attn(
+                    self.norm1(x), use_cache=True, past_state=past_mamba_state
+                )
+                x = x + self.dropout(attn_out)
+            else:
+                # MLA/EGMLA with KV caching
+                attn_out, present_kv = self.attn(
+                    self.norm1(x), use_cache=True, past_kv=past_kv
+                )
+                x = x + self.dropout(attn_out)
+        else:
+            # No caching
+            x = x + self.dropout(self.attn(self.norm1(x)))
+
         # FFN + dropout + residual
         x = x + self.dropout(self.ffn(self.norm2(x)))
-        
+
+        if use_cache:
+            return x, present_kv, present_mamba_state
         return x
+
+    def get_aux_loss(self):
+        """Get MoE auxiliary loss if applicable."""
+        if self.is_moe and hasattr(self.ffn, 'aux_loss'):
+            return self.ffn.aux_loss
+        return None
 
 
 class Elleci(nn.Module):
@@ -156,8 +233,10 @@ class Elleci(nn.Module):
             self.thinking_loop = None
         
         # Main blocks (shared)
+        # Pattern 75/25: 3 Mamba, 1 MLA (layers 0,1,2=Mamba, 3=MLA, 4,5,6=Mamba, 7=MLA, ...)
+        # This reduces KV cache by 50% (6 MLA instead of 12 for 24 layers)
         self.blocks = nn.ModuleList([
-            ElleciBlock(config, use_mamba=(i % 2 == 0))  # Alternate Mamba/MLA
+            ElleciBlock(config, use_mamba=(i % 4 != 3), layer_idx=i)
             for i in range(config.n_layers)
         ])
         
@@ -319,39 +398,98 @@ class Elleci(nn.Module):
         return logits, loss
     
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, use_cache=True):
         """
-        Generate tokens autoregressively.
-        
+        Generate tokens autoregressively with KV + Mamba state caching.
+
         Args:
             idx: Starting tokens [batch, seq_len]
             max_new_tokens: Number of tokens to generate
             temperature: Sampling temperature
             top_k: Top-k sampling (if not None)
-            
+            use_cache: Whether to use caching for faster generation
+
         Returns:
             Generated tokens [batch, seq_len + max_new_tokens]
         """
-        for _ in range(max_new_tokens):
-            # Crop to max_seq_len
-            idx_cond = idx if idx.size(1) <= self.config.max_seq_len else idx[:, -self.config.max_seq_len:]
-            
-            # Forward
-            logits, _ = self(idx_cond)
+        if not use_cache:
+            # Original slow path (for debugging)
+            for _ in range(max_new_tokens):
+                idx_cond = idx if idx.size(1) <= self.config.max_seq_len else idx[:, -self.config.max_seq_len:]
+                logits, _ = self(idx_cond)
+                logits = logits[:, -1, :] / temperature
+
+                if top_k is not None:
+                    v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                    logits[logits < v[:, [-1]]] = -float('Inf')
+
+                probs = F.softmax(logits, dim=-1)
+                idx_next = torch.multinomial(probs, num_samples=1)
+                idx = torch.cat((idx, idx_next), dim=1)
+            return idx
+
+        # Fast path with KV + Mamba state caching
+        batch_size = idx.size(0)
+
+        # Initialize caches for each block
+        past_kvs = [None] * len(self.blocks)  # KV cache for MLA blocks
+        past_mamba_states = [None] * len(self.blocks)  # SSM state for Mamba blocks
+
+        # Process initial prompt (prefill)
+        x = self.token_emb(idx)
+        for i, block in enumerate(self.blocks):
+            x, past_kvs[i], past_mamba_states[i] = block(
+                x, use_cache=True, past_kv=None, past_mamba_state=None
+            )
+
+        x = self.norm_f(x)
+        logits = self.lm_head(x)
+        logits = logits[:, -1, :] / temperature
+
+        if top_k is not None:
+            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+            logits[logits < v[:, [-1]]] = -float('Inf')
+
+        probs = F.softmax(logits, dim=-1)
+        idx_next = torch.multinomial(probs, num_samples=1)
+        idx = torch.cat((idx, idx_next), dim=1)
+
+        # Generate remaining tokens one at a time with caching
+        for _ in range(max_new_tokens - 1):
+            # Check sequence length limit
+            if idx.size(1) > self.config.max_seq_len:
+                # Truncate and invalidate cache
+                idx = idx[:, -self.config.max_seq_len:]
+                past_kvs = [None] * len(self.blocks)
+                past_mamba_states = [None] * len(self.blocks)
+                # Re-process truncated sequence
+                x = self.token_emb(idx)
+                for i, block in enumerate(self.blocks):
+                    x, past_kvs[i], past_mamba_states[i] = block(
+                        x, use_cache=True, past_kv=None, past_mamba_state=None
+                    )
+            else:
+                # Process only the new token with cached states
+                x = self.token_emb(idx_next)
+                for i, block in enumerate(self.blocks):
+                    x, past_kvs[i], past_mamba_states[i] = block(
+                        x, use_cache=True,
+                        past_kv=past_kvs[i],
+                        past_mamba_state=past_mamba_states[i]
+                    )
+
+            x = self.norm_f(x)
+            logits = self.lm_head(x)
             logits = logits[:, -1, :] / temperature
-            
-            # Top-k sampling
+
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
-            
-            # Sample
+
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
-            
-            # Append
             idx = torch.cat((idx, idx_next), dim=1)
-        
+
         return idx
 
 
