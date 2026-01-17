@@ -26,6 +26,8 @@ echo ""
 echo "[3/5] Installazione dipendenze e Kernel Ottimizzati..."
 
 # 1. Build tools (essenziali per compilare flash-attn)
+# Limit jobs to prevent OOM on A100 (27 cores)
+export MAX_JOBS=4
 pip install --quiet ninja packaging
 
 # 2. PyTorch dependencies base
