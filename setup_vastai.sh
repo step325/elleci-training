@@ -21,20 +21,33 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Installa solo pacchetti mancanti
+# Installa pacchetti base e build tools
 echo ""
-echo "[3/5] Installazione dipendenze (solo mancanti)..."
+echo "[3/5] Installazione dipendenze e Kernel Ottimizzati..."
+
+# 1. Build tools (essenziali per compilare flash-attn)
+pip install --quiet ninja packaging
+
+# 2. PyTorch dependencies base
 pip install --quiet --upgrade-strategy only-if-needed \
     bitsandbytes>=0.41.0 \
     datasets>=2.14.0 \
     einops>=0.7.0 \
-    accelerated-scan>=0.2.0 \
     wandb>=0.15.0 \
     tqdm>=4.65.0 \
     transformers>=4.35.0 \
     tokenizers>=0.15.0
 
-echo "   Dipendenze OK"
+# 3. Flash Attention 2 (Critico per A100)
+echo "   Installazione Flash Attention 2 (può richiedere qualche minuto)..."
+pip install flash-attn --no-build-isolation
+
+# 4. Mamba Kernels (Critico per velocità Mamba)
+echo "   Installazione Mamba Kernels..."
+pip install causal-conv1d>=1.2.0
+pip install mamba-ssm>=1.2.0
+
+echo "   Dipendenze e Kernel OK"
 
 # Verifica imports critici
 echo ""
