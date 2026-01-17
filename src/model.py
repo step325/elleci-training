@@ -214,24 +214,6 @@ class Elleci(nn.Module):
         self.token_emb = nn.Embedding(config.vocab_size, config.d_model)
         
         
-        # Router (Optional)
-        if config.use_router:
-            self.router = AdaptiveRouter(config.router)
-            
-            # Fast path: 2 lightweight blocks
-            self.fast_blocks = nn.ModuleList([
-                ElleciBlock(config, use_mamba=False) for _ in range(2)
-            ])
-            
-            # Slow path: Single block for thinking loop
-            self.slow_block = ElleciBlock(config, use_mamba=True)
-            self.thinking_loop = ThinkingLoop(config.thinking, self.slow_block)
-        else:
-            self.router = None
-            self.fast_blocks = None
-            self.slow_block = None
-            self.thinking_loop = None
-        
         # Main blocks (shared)
         # Pattern 75/25: 3 Mamba, 1 MLA (layers 0,1,2=Mamba, 3=MLA, 4,5,6=Mamba, 7=MLA, ...)
         # This reduces KV cache by 50% (6 MLA instead of 12 for 24 layers)
@@ -239,6 +221,23 @@ class Elleci(nn.Module):
             ElleciBlock(config, use_mamba=(i % 4 != 3), layer_idx=i)
             for i in range(config.n_layers)
         ])
+        
+        # Router (Optional)
+        if config.use_router:
+            self.router = AdaptiveRouter(config.router)
+
+            # Fast path: 2 lightweight blocks
+            self.fast_blocks = nn.ModuleList([
+                ElleciBlock(config, use_mamba=False) for _ in range(2)
+            ])
+        else:
+            self.router = None
+            self.fast_blocks = None
+
+        # Thinking Loop (System 2)
+        # Shared Weights: Use the last block (MLA) for reasoning
+        # This ensures the thinking loop uses trained weights without extra parameters
+        self.thinking_loop = ThinkingLoop(config.thinking, self.blocks[-1])
         
         # Output
         norm_type = getattr(config, 'norm_type', 'rms')
@@ -398,7 +397,8 @@ class Elleci(nn.Module):
         return logits, loss
     
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, use_cache=True):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, use_cache=True,
+                 thinking_mode=False, thinking_iterations=None):
         """
         Generate tokens autoregressively with KV + Mamba state caching.
 
@@ -408,10 +408,15 @@ class Elleci(nn.Module):
             temperature: Sampling temperature
             top_k: Top-k sampling (if not None)
             use_cache: Whether to use caching for faster generation
+            thinking_mode: If True, apply thinking loop to prompt before generation (System 2)
+            thinking_iterations: Override max iterations for thinking loop (default: config value)
 
         Returns:
             Generated tokens [batch, seq_len + max_new_tokens]
+            If thinking_mode=True, also returns thinking_info dict with iterations used
         """
+        thinking_info = None
+
         if not use_cache:
             # Original slow path (for debugging)
             for _ in range(max_new_tokens):
@@ -437,6 +442,19 @@ class Elleci(nn.Module):
 
         # Process initial prompt (prefill)
         x = self.token_emb(idx)
+
+        # Thinking Mode (System 2): Apply iterative refinement before generation
+        if thinking_mode:
+            x_original = x.clone()  # Keep original for residual
+            x_thinking, n_iterations = self.thinking_loop(x, n_iterations=thinking_iterations)
+            # Residual connection: blend thinking output with original
+            x = x + x_thinking
+            thinking_info = {
+                'iterations_used': n_iterations,
+                'max_iterations': self.thinking_loop.max_iterations,
+                'converged': n_iterations < self.thinking_loop.max_iterations,
+            }
+
         for i, block in enumerate(self.blocks):
             x, past_kvs[i], past_mamba_states[i] = block(
                 x, use_cache=True, past_kv=None, past_mamba_state=None
@@ -490,6 +508,8 @@ class Elleci(nn.Module):
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
 
+        if thinking_mode:
+            return idx, thinking_info
         return idx
 
 
